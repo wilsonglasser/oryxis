@@ -10,6 +10,10 @@
 pub(crate) struct McpState {
     /// Whether the bundled MCP server launcher is enabled.
     pub(crate) server_enabled: bool,
+    /// Whether the MCP server may create and edit hosts (`create_host` /
+    /// `update_host`). Persisted as `mcp_server_allow_writes`, off by
+    /// default; the server reads it per call.
+    pub(crate) allow_writes: bool,
     /// Whether the "how to connect" info block is expanded.
     pub(crate) show_info: bool,
     /// Latched true briefly after the user copies the client config snippet.

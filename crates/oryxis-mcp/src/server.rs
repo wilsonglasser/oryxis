@@ -136,6 +136,8 @@ impl Server {
                     "list_keys" => Ok(handlers::handle_list_keys(&self.vault()).unwrap_or(json!([]))),
                     "ssh_execute" => handlers::handle_ssh_execute(self, arguments, cancel).await,
                     "accept_host_key" => crate::hostkey::handle_accept_host_key(self, arguments),
+                    "create_host" => crate::writes::handle_create_host(self, arguments),
+                    "update_host" => crate::writes::handle_update_host(self, arguments),
                     _ => Err(format!("Unknown tool: {}", tool_name)),
                 };
 

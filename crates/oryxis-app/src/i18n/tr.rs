@@ -1019,6 +1019,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "mcp_server" => "MCP Sunucusu",
         "enable_mcp_server" => "MCP Sunucusunu Etkinleştir",
         "mcp_server_desc" => "Yapay zeka asistanlarının MCP protokolü üzerinden sunucularınıza erişmesine izin verir",
+        "mcp_allow_writes" => "MCP sunucusunun ana makine eklemesine ve düzenlemesine izin ver",
+        "mcp_allow_writes_desc" => "Bir yapay zekâ asistanının MCP üzerinden ana makine oluşturup alanlarını değiştirmesine izin verir (create_host, update_host). Klasör hiç oluşturulmaz, vekil hiç ayarlanmaz, parolalar yalnızca yazılır. Varsayılan olarak kapalı.",
         "mcp_setup_guide" => "Kurulum Kılavuzu",
         "mcp_copied" => "Kopyalandı!",
         "mcp_info_title" => "MCP Sunucusu Kurulumu",

@@ -1025,6 +1025,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "mcp_server" => "שרת MCP",
         "enable_mcp_server" => "הפעלת שרת MCP",
         "mcp_server_desc" => "מאפשר לעוזרי AI לגשת למארחים שלכם דרך פרוטוקול MCP",
+        "mcp_allow_writes" => "לאפשר לשרת MCP להוסיף ולערוך מארחים",
+        "mcp_allow_writes_desc" => "מאפשר לעוזר AI ליצור מארחים ולשנות את השדות שלהם דרך MCP ‏(create_host, update_host). תיקיות לעולם לא נוצרות, פרוקסי לעולם לא מוגדר, וסיסמאות רק נכתבות. כבוי כברירת מחדל.",
         "mcp_setup_guide" => "מדריך הגדרה",
         "mcp_copied" => "הועתק!",
         "mcp_info_title" => "הגדרת שרת MCP",

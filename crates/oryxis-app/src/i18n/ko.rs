@@ -1019,6 +1019,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "mcp_server" => "MCP 서버",
         "enable_mcp_server" => "MCP 서버 사용",
         "mcp_server_desc" => "AI 어시스턴트가 MCP 프로토콜을 통해 호스트에 접근할 수 있도록 합니다",
+        "mcp_allow_writes" => "MCP 서버가 호스트를 추가하고 편집하도록 허용",
+        "mcp_allow_writes_desc" => "AI 어시스턴트가 MCP로 호스트를 만들고 필드를 바꿀 수 있게 합니다(create_host, update_host). 폴더는 만들지 않고, 프록시는 설정하지 않으며, 비밀번호는 쓰기만 됩니다. 기본값은 꺼짐.",
         "mcp_setup_guide" => "설정 가이드",
         "mcp_copied" => "복사됨!",
         "mcp_info_title" => "MCP 서버 설정",

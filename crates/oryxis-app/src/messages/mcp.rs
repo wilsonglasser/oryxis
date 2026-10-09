@@ -3,6 +3,8 @@
 #[derive(Debug, Clone)]
 pub enum McpMessage {
     ToggleMcpServer,
+    /// Flip the opt-in that lets the server add and edit hosts.
+    ToggleMcpAllowWrites,
     ShowMcpInfo,
     HideMcpInfo,
     CopyMcpConfig,

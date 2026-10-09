@@ -1025,6 +1025,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "mcp_server" => "MCP सर्वर",
         "enable_mcp_server" => "MCP सर्वर चालू करें",
         "mcp_server_desc" => "AI असिस्टेंट को MCP प्रोटोकॉल के ज़रिए आपके होस्टों तक पहुंच देता है",
+        "mcp_allow_writes" => "MCP सर्वर को होस्ट जोड़ने और संपादित करने दें",
+        "mcp_allow_writes_desc" => "AI सहायक को MCP के ज़रिए होस्ट बनाने और उनके फ़ील्ड बदलने देता है (create_host, update_host)। फ़ोल्डर कभी नहीं बनते, प्रॉक्सी कभी सेट नहीं होते, और पासवर्ड केवल लिखे जाते हैं। डिफ़ॉल्ट रूप से बंद।",
         "mcp_setup_guide" => "सेटअप गाइड",
         "mcp_copied" => "कॉपी हुआ!",
         "mcp_info_title" => "MCP सर्वर सेटअप",

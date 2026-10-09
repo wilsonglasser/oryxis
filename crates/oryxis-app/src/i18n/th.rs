@@ -1025,6 +1025,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "mcp_server" => "เซิร์ฟเวอร์ MCP",
         "enable_mcp_server" => "เปิดใช้เซิร์ฟเวอร์ MCP",
         "mcp_server_desc" => "ให้ผู้ช่วย AI เข้าถึงโฮสต์ของคุณผ่านโปรโตคอล MCP ได้",
+        "mcp_allow_writes" => "อนุญาตให้เซิร์ฟเวอร์ MCP เพิ่มและแก้ไขโฮสต์",
+        "mcp_allow_writes_desc" => "ให้ผู้ช่วย AI สร้างโฮสต์และเปลี่ยนฟิลด์ผ่าน MCP ได้ (create_host, update_host) ไม่มีการสร้างโฟลเดอร์ ไม่มีการตั้งพร็อกซี และรหัสผ่านเขียนได้อย่างเดียว ปิดโดยค่าเริ่มต้น",
         "mcp_setup_guide" => "คู่มือการตั้งค่า",
         "mcp_copied" => "คัดลอกแล้ว!",
         "mcp_info_title" => "การตั้งค่าเซิร์ฟเวอร์ MCP",

@@ -818,6 +818,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "mcp_server" => "MCP 服务器",
         "enable_mcp_server" => "启用 MCP 服务器",
         "mcp_server_desc" => "允许 AI 助手通过 MCP 协议访问您的主机",
+        "mcp_allow_writes" => "允许 MCP 服务器添加和编辑主机",
+        "mcp_allow_writes_desc" => "允许 AI 助手通过 MCP 创建主机并修改其字段（create_host、update_host）。不会创建分组，不会设置代理，密码只写不读。默认关闭。",
         "mcp_setup_guide" => "配置指南",
         "mcp_copied" => "已复制！",
         "mcp_info_title" => "MCP 服务器配置",

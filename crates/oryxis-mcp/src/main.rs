@@ -7,6 +7,7 @@ mod stdio;
 #[cfg(test)]
 mod tests;
 mod tools;
+mod writes;
 
 use std::io;
 use std::sync::Arc;

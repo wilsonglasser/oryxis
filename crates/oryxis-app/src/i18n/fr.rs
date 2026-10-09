@@ -818,6 +818,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "mcp_server" => "Serveur MCP",
         "enable_mcp_server" => "Activer le Serveur MCP",
         "mcp_server_desc" => "Permet aux assistants IA d'accéder à vos hôtes via le protocole MCP",
+        "mcp_allow_writes" => "Autoriser le serveur MCP à ajouter et modifier des hôtes",
+        "mcp_allow_writes_desc" => "Permet à un assistant IA de créer des hôtes et de modifier leurs champs via MCP (create_host, update_host). Aucun dossier n'est créé, aucun proxy n'est défini, et les mots de passe n'entrent que dans un sens. Désactivé par défaut.",
         "mcp_setup_guide" => "Guide de Configuration",
         "mcp_copied" => "Copié !",
         "mcp_info_title" => "Configuration du Serveur MCP",

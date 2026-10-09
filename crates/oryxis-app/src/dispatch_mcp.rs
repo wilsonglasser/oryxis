@@ -36,6 +36,13 @@ impl Oryxis {
                     )));
                 }
             }
+            McpMessage::ToggleMcpAllowWrites => {
+                self.mcp.allow_writes = !self.mcp.allow_writes;
+                self.persist_setting(
+                    "mcp_server_allow_writes",
+                    if self.mcp.allow_writes { "true" } else { "false" },
+                );
+            }
             McpMessage::ShowMcpInfo => {
                 self.mcp.show_info = true;
                 self.mcp.config_copied = false;

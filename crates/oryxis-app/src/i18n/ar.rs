@@ -1051,6 +1051,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "mcp_server" => "خادم MCP",
         "enable_mcp_server" => "تفعيل خادم MCP",
         "mcp_server_desc" => "يسمح لمساعدي الذكاء الاصطناعي بالوصول إلى مضيفيك عبر بروتوكول MCP",
+        "mcp_allow_writes" => "السماح لخادم MCP بإضافة المضيفين وتعديلهم",
+        "mcp_allow_writes_desc" => "يتيح لمساعد الذكاء الاصطناعي إنشاء مضيفين وتغيير حقولهم عبر MCP ‏(create_host، update_host). لا تُنشأ مجلدات، ولا تُضبط وكلاء، وكلمات المرور تُكتب فقط. معطّل افتراضيًا.",
         "mcp_setup_guide" => "دليل الإعداد",
         "mcp_copied" => "تم النسخ!",
         "mcp_info_title" => "إعداد خادم MCP",

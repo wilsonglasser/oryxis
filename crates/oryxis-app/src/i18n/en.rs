@@ -1025,6 +1025,8 @@ pub(super) fn lookup(key: &str) -> &'static str {
         "mcp_server" => "MCP Server",
         "enable_mcp_server" => "Enable MCP Server",
         "mcp_server_desc" => "Allows AI assistants to access your hosts via the MCP protocol",
+        "mcp_allow_writes" => "Allow the MCP server to add and edit hosts",
+        "mcp_allow_writes_desc" => "Lets an AI assistant create hosts and change their fields over MCP (create_host, update_host). Folders are never created, proxies are never set, and passwords only go in. Off by default.",
         "mcp_setup_guide" => "Setup Guide",
         "mcp_copied" => "Copied!",
         "mcp_info_title" => "MCP Server Setup",

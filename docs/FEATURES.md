@@ -537,8 +537,14 @@ panel turns it on, next to the other optional ones). Switching it back off close
 
 - **AI integration.** Expose your SSH hosts to AI assistants via the
   [Model Context Protocol](https://modelcontextprotocol.io/).
-- **6 tools.** `list_hosts`, `get_host`, `ssh_execute`, `list_groups`,
-  `list_keys`, `accept_host_key`.
+- **8 tools.** `list_hosts`, `get_host`, `ssh_execute`, `list_groups`,
+  `list_keys`, `accept_host_key`, `create_host`, `update_host`.
+- **Writes are opt-in.** With "Allow the MCP server to add and edit hosts"
+  on (Settings > MCP Server, off by default), an assistant can create SSH
+  hosts and change their fields. Folders are resolved, never created;
+  keys, identities and bastions are named by label or id; the password is
+  the one secret accepted and it only goes in; proxies stay the app's.
+  The running app picks the change up at once.
 - **Host keys stay pinned, and the agent is told.** A dial to a host whose
   key the vault has not pinned fails with the key type and fingerprint;
   `accept_host_key` pins exactly that key once the user has checked it. A

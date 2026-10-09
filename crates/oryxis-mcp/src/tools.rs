@@ -70,6 +70,53 @@ pub fn tool_definitions() -> Vec<Value> {
             }
         }),
         json!({
+            "name": "create_host",
+            "description": "Create a new SSH host in the Oryxis vault. Requires \"Allow the MCP server to add and edit hosts\" in Oryxis Settings > MCP Server. A folder (`group`) must already exist (path like \"Prod / Web\" or a label); keys, identities and jump hops are named by label or id. The password is stored encrypted and never returned. Proxies cannot be set here.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "label": { "type": "string", "description": "Display name" },
+                    "hostname": { "type": "string", "description": "Hostname or IP" },
+                    "port": { "type": "integer", "description": "SSH port (default 22)" },
+                    "username": { "type": "string", "description": "Login user; omit to inherit from the folder or identity" },
+                    "auth_method": { "type": "string", "description": "auto | password | key | agent | interactive | password_prompt (default auto)" },
+                    "password": { "type": "string", "description": "Password to store encrypted" },
+                    "key": { "type": "string", "description": "Vault SSH key, by label or id" },
+                    "identity": { "type": "string", "description": "Saved identity, by label or id" },
+                    "group": { "type": "string", "description": "Existing folder, by path or label" },
+                    "tags": { "type": "array", "items": { "type": "string" } },
+                    "notes": { "type": "string" },
+                    "jump_chain": { "type": "array", "items": { "type": "string" }, "description": "Bastions to hop through, by label or id, in order" },
+                    "mcp_enabled": { "type": "boolean", "description": "Expose the host to MCP (default true)" }
+                },
+                "required": ["label", "hostname"]
+            }
+        }),
+        json!({
+            "name": "update_host",
+            "description": "Change fields of an existing MCP-enabled SSH host. Only the fields given change; pass null to clear an optional field (username, group, key, identity, notes, password). Same rules and the same setting as create_host.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "id": { "type": "string", "description": "Connection UUID" },
+                    "label": { "type": "string" },
+                    "hostname": { "type": "string" },
+                    "port": { "type": "integer" },
+                    "username": { "type": ["string", "null"] },
+                    "auth_method": { "type": "string" },
+                    "password": { "type": ["string", "null"], "description": "New password, or null to clear the stored one" },
+                    "key": { "type": ["string", "null"] },
+                    "identity": { "type": ["string", "null"] },
+                    "group": { "type": ["string", "null"], "description": "Existing folder by path or label; null moves the host to the top level" },
+                    "tags": { "type": ["array", "null"], "items": { "type": "string" } },
+                    "notes": { "type": ["string", "null"] },
+                    "jump_chain": { "type": ["array", "null"], "items": { "type": "string" } },
+                    "mcp_enabled": { "type": "boolean" }
+                },
+                "required": ["id"]
+            }
+        }),
+        json!({
             "name": "list_groups",
             "description": "List all host groups in the vault",
             "inputSchema": {

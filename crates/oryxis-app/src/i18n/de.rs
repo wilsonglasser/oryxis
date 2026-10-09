@@ -805,6 +805,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "mcp_server" => "MCP-Server",
         "enable_mcp_server" => "MCP-Server aktivieren",
         "mcp_server_desc" => "Ermöglicht KI-Assistenten den Zugriff auf Ihre Hosts über das MCP-Protokoll",
+        "mcp_allow_writes" => "MCP-Server darf Hosts anlegen und bearbeiten",
+        "mcp_allow_writes_desc" => "Erlaubt einem KI-Assistenten, über MCP Hosts anzulegen und ihre Felder zu ändern (create_host, update_host). Ordner werden nie angelegt, Proxys nie gesetzt, Passwörter nur geschrieben. Standardmäßig aus.",
         "mcp_setup_guide" => "Einrichtungsanleitung",
         "mcp_copied" => "Kopiert!",
         "mcp_info_title" => "MCP-Server Einrichtung",

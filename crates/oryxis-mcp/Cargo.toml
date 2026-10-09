@@ -1,6 +1,6 @@
 [package]
 name = "oryxis-mcp"
-version = "0.1.10"
+version = "0.1.11"
 edition = "2021"
 license.workspace = true
 authors.workspace = true
@@ -20,7 +20,7 @@ serde_json = { workspace = true }
 uuid = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
+chrono = { workspace = true }
 
 [dev-dependencies]
-chrono = { workspace = true }
 tempfile = "3"

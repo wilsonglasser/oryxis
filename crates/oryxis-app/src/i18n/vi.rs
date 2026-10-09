@@ -1019,6 +1019,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "mcp_server" => "Máy chủ MCP",
         "enable_mcp_server" => "Bật máy chủ MCP",
         "mcp_server_desc" => "Cho phép trợ lý AI truy cập máy chủ của bạn qua giao thức MCP",
+        "mcp_allow_writes" => "Cho phép máy chủ MCP thêm và sửa host",
+        "mcp_allow_writes_desc" => "Cho phép trợ lý AI tạo host và thay đổi các trường qua MCP (create_host, update_host). Không bao giờ tạo thư mục, không bao giờ đặt proxy, mật khẩu chỉ được ghi vào. Mặc định tắt.",
         "mcp_setup_guide" => "Hướng dẫn thiết lập",
         "mcp_copied" => "Đã chép!",
         "mcp_info_title" => "Thiết lập máy chủ MCP",

@@ -82,9 +82,11 @@ mod tests {
     #[test]
     fn tool_definitions_lists_every_tool() {
         let tools = tool_definitions();
-        assert_eq!(tools.len(), 6);
+        assert_eq!(tools.len(), 8);
         let names: Vec<&str> = tools.iter().map(|t| t["name"].as_str().unwrap()).collect();
         assert!(names.contains(&"accept_host_key"));
+        assert!(names.contains(&"create_host"));
+        assert!(names.contains(&"update_host"));
         assert!(names.contains(&"list_hosts"));
         assert!(names.contains(&"get_host"));
         assert!(names.contains(&"ssh_execute"));
@@ -815,5 +817,178 @@ mod tests {
         assert!(text.contains("HOST KEY CHANGED for bastion.example:22"), "{text}");
         assert!(text.contains("SHA256:old") && text.contains("SHA256:new"));
         assert!(text.contains("\"status\": \"changed\""));
+    }
+
+    // ── create_host / update_host ──
+
+    fn allow_writes(server: &Server) {
+        server
+            .vault()
+            .set_setting(crate::writes::ALLOW_WRITES_SETTING, "true")
+            .unwrap();
+    }
+
+    /// Off by default: with the switch off nothing is written, and the
+    /// answer says where the switch is.
+    #[tokio::test]
+    async fn writes_are_off_until_the_user_allows_them() {
+        let server = Server::new(test_vault());
+        let (err, text) = call(
+            &server,
+            "create_host",
+            json!({"label": "web", "hostname": "10.0.0.1"}),
+        )
+        .await;
+        assert!(err);
+        assert!(text.contains("Settings > MCP Server"), "{text}");
+        assert!(server.vault().list_connections().unwrap().is_empty());
+    }
+
+    /// A created host lands as an SSH row with a fresh stamp, the
+    /// password encrypted beside it and never in the answer, and the
+    /// answer is get_host's shape.
+    #[tokio::test]
+    async fn create_host_writes_the_row_and_answers_like_get_host() {
+        let server = Server::new(test_vault());
+        allow_writes(&server);
+        let folder = Group::new("Prod");
+        server.vault().save_group(&folder).unwrap();
+        let before = chrono::Utc::now();
+        let (err, text) = call(
+            &server,
+            "create_host",
+            json!({
+                "label": "web", "hostname": "10.0.0.1", "port": 2222,
+                "username": "deploy", "auth_method": "password", "password": "s3cret",
+                "group": "Prod", "tags": ["web", "prod"], "notes": "made over MCP"
+            }),
+        )
+        .await;
+        assert!(!err, "{text}");
+        assert!(!text.contains("s3cret"));
+        let v: Value = serde_json::from_str(&text).unwrap();
+        assert_eq!(v["label"], "web");
+        assert_eq!(v["port"], 2222);
+        assert_eq!(v["effective_username"], "deploy");
+        assert_eq!(v["auth_method"], "Password");
+        assert_eq!(v["group_id"], folder.id.to_string());
+        let id = uuid::Uuid::parse_str(v["id"].as_str().unwrap()).unwrap();
+        let rows = server.vault().list_connections().unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].id, id);
+        assert_eq!(rows[0].tags, vec!["web", "prod"]);
+        assert!(rows[0].updated_at >= before);
+        assert!(rows[0].mcp_enabled);
+        assert_eq!(
+            server.vault().get_connection_password(&id).unwrap().as_deref(),
+            Some("s3cret")
+        );
+    }
+
+    /// A folder is resolved, never created: a typo refuses the write
+    /// and names what exists, and no row or folder appears.
+    #[tokio::test]
+    async fn a_folder_typo_mints_nothing() {
+        let server = Server::new(test_vault());
+        allow_writes(&server);
+        server.vault().save_group(&Group::new("Prod")).unwrap();
+        let (err, text) = call(
+            &server,
+            "create_host",
+            json!({"label": "web", "hostname": "10.0.0.1", "group": "Prd"}),
+        )
+        .await;
+        assert!(err);
+        assert!(text.contains("Prod"), "{text}");
+        assert!(server.vault().list_connections().unwrap().is_empty());
+        assert_eq!(server.vault().list_groups().unwrap().len(), 1);
+    }
+
+    /// update_host changes only what it is given: the rest of the row,
+    /// the stored password included, stays; `null` clears a field, and a
+    /// null password clears the stored one.
+    #[tokio::test]
+    async fn update_host_touches_only_the_fields_given() {
+        let server = Server::new(test_vault());
+        allow_writes(&server);
+        let mut host = Connection::new("web", "10.0.0.1");
+        host.username = Some("deploy".into());
+        host.notes = Some("keep me".into());
+        host.tags = vec!["a".into()];
+        server.vault().save_connection(&host, Some("pw")).unwrap();
+
+        let (err, text) = call(
+            &server,
+            "update_host",
+            json!({"id": host.id.to_string(), "hostname": "10.0.0.2", "username": null}),
+        )
+        .await;
+        assert!(!err, "{text}");
+        let row = server.vault().list_connections().unwrap().remove(0);
+        assert_eq!(row.hostname, "10.0.0.2");
+        assert_eq!(row.username, None, "null clears");
+        assert_eq!(row.notes.as_deref(), Some("keep me"), "unnamed fields stay");
+        assert_eq!(row.tags, vec!["a"]);
+        assert_eq!(
+            server.vault().get_connection_password(&host.id).unwrap().as_deref(),
+            Some("pw"),
+            "an absent password keeps the stored one"
+        );
+
+        let (err, _) = call(
+            &server,
+            "update_host",
+            json!({"id": host.id.to_string(), "password": null}),
+        )
+        .await;
+        assert!(!err);
+        assert_eq!(server.vault().get_connection_password(&host.id).unwrap(), None);
+    }
+
+    /// Names are resolved, not guessed: two keys with one label need the
+    /// id, a host is never its own hop, and a proxy is refused outright.
+    #[tokio::test]
+    async fn names_resolve_or_refuse() {
+        let server = Server::new(test_vault());
+        allow_writes(&server);
+        let k1 = SshKey::new("deploy", KeyAlgorithm::Ed25519);
+        let k2 = SshKey::new("deploy", KeyAlgorithm::Ed25519);
+        server.vault().save_key(&k1, Some("PEM")).unwrap();
+        server.vault().save_key(&k2, Some("PEM")).unwrap();
+        let (err, text) = call(
+            &server,
+            "create_host",
+            json!({"label": "web", "hostname": "10.0.0.1", "key": "deploy"}),
+        )
+        .await;
+        assert!(err);
+        assert!(text.contains("pass the id"), "{text}");
+        let (err, text) = call(
+            &server,
+            "create_host",
+            json!({"label": "web", "hostname": "10.0.0.1", "key": k1.id.to_string()}),
+        )
+        .await;
+        assert!(!err, "{text}");
+        let web: Value = serde_json::from_str(&text).unwrap();
+        assert_eq!(web["key_id"], k1.id.to_string());
+
+        let (err, text) = call(
+            &server,
+            "update_host",
+            json!({"id": web["id"], "jump_chain": ["web"]}),
+        )
+        .await;
+        assert!(err);
+        assert!(text.contains("own jump hop"), "{text}");
+
+        let (err, text) = call(
+            &server,
+            "update_host",
+            json!({"id": web["id"], "proxy": {"type": "command", "command": "nc"}}),
+        )
+        .await;
+        assert!(err);
+        assert!(text.contains("Proxies are not set over MCP"), "{text}");
     }
 }

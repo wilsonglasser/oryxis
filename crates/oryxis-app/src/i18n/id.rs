@@ -1019,6 +1019,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "mcp_server" => "Server MCP",
         "enable_mcp_server" => "Aktifkan Server MCP",
         "mcp_server_desc" => "Memungkinkan asisten AI mengakses host Anda melalui protokol MCP",
+        "mcp_allow_writes" => "Izinkan server MCP menambah dan mengedit host",
+        "mcp_allow_writes_desc" => "Membiarkan asisten AI membuat host dan mengubah kolomnya lewat MCP (create_host, update_host). Folder tidak pernah dibuat, proxy tidak pernah diatur, dan kata sandi hanya masuk. Mati secara default.",
         "mcp_setup_guide" => "Panduan Penyiapan",
         "mcp_copied" => "Tersalin!",
         "mcp_info_title" => "Penyiapan Server MCP",

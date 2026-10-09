@@ -44,6 +44,15 @@ impl Oryxis {
                 Message::Mcp(McpMessage::ToggleMcpServer),
             ),
             Space::new().height(12),
+            // The write opt-in: the server reads the setting per call, so
+            // flipping it needs no restart on either side.
+            self.nav_toggle_row(
+                crate::i18n::t("mcp_allow_writes"),
+                self.mcp.allow_writes,
+                Message::Mcp(McpMessage::ToggleMcpAllowWrites),
+            ),
+            text(crate::i18n::t("mcp_allow_writes_desc")).size(11).color(OryxisColors::t().text_muted),
+            Space::new().height(12),
             dir_row(vec![
                 text(crate::i18n::t("mcp_server_desc")).size(11).color(OryxisColors::t().text_muted).boxed(),
                 Space::new().width(Length::Fill).boxed(),

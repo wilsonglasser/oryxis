@@ -818,6 +818,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "mcp_server" => "MCPサーバー",
         "enable_mcp_server" => "MCPサーバーを有効化",
         "mcp_server_desc" => "AIアシスタントがMCPプロトコルを通じてホストにアクセスできるようにします",
+        "mcp_allow_writes" => "MCP サーバーにホストの追加と編集を許可",
+        "mcp_allow_writes_desc" => "AI アシスタントが MCP 経由でホストを作成し、フィールドを変更できるようにします (create_host, update_host)。フォルダーは作成されず、プロキシは設定されず、パスワードは書き込みのみです。既定ではオフ。",
         "mcp_setup_guide" => "セットアップガイド",
         "mcp_copied" => "コピーしました！",
         "mcp_info_title" => "MCPサーバー設定",

@@ -818,6 +818,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "mcp_server" => "MCP 伺服器",
         "enable_mcp_server" => "啟用 MCP 伺服器",
         "mcp_server_desc" => "允許 AI 助理透過 MCP 協定存取您的主機",
+        "mcp_allow_writes" => "允許 MCP 伺服器新增和編輯主機",
+        "mcp_allow_writes_desc" => "允許 AI 助理透過 MCP 建立主機並修改其欄位（create_host、update_host）。不會建立群組，不會設定代理，密碼只寫不讀。預設關閉。",
         "mcp_setup_guide" => "設定指南",
         "mcp_copied" => "已複製！",
         "mcp_info_title" => "MCP 伺服器設定",

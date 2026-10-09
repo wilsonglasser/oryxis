@@ -1025,6 +1025,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "mcp_server" => "MCP server",
         "enable_mcp_server" => "Povolit MCP server",
         "mcp_server_desc" => "Umožňuje AI asistentům přistupovat k vašim hostitelům přes protokol MCP",
+        "mcp_allow_writes" => "Povolit serveru MCP přidávat a upravovat hostitele",
+        "mcp_allow_writes_desc" => "Umožní AI asistentovi vytvářet hostitele a měnit jejich pole přes MCP (create_host, update_host). Složky se nikdy nevytvářejí, proxy se nikdy nenastavují a hesla se pouze zapisují. Ve výchozím stavu vypnuto.",
         "mcp_setup_guide" => "Průvodce nastavením",
         "mcp_copied" => "Zkopírováno!",
         "mcp_info_title" => "Nastavení MCP serveru",

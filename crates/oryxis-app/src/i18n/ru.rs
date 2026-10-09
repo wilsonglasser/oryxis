@@ -805,6 +805,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "mcp_server" => "Сервер MCP",
         "enable_mcp_server" => "Включить сервер MCP",
         "mcp_server_desc" => "Позволяет ИИ-помощникам получать доступ к вашим хостам через протокол MCP",
+        "mcp_allow_writes" => "Разрешить серверу MCP добавлять и изменять хосты",
+        "mcp_allow_writes_desc" => "Позволяет ИИ-ассистенту создавать хосты и менять их поля через MCP (create_host, update_host). Папки не создаются, прокси не задаются, пароли только записываются. По умолчанию выключено.",
         "mcp_setup_guide" => "Руководство по настройке",
         "mcp_copied" => "Скопировано!",
         "mcp_info_title" => "Настройка сервера MCP",

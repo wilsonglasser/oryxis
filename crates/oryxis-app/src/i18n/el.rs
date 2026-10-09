@@ -1025,6 +1025,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "mcp_server" => "Διακομιστής MCP",
         "enable_mcp_server" => "Ενεργοποίηση διακομιστή MCP",
         "mcp_server_desc" => "Επιτρέπει σε βοηθούς AI την πρόσβαση στους hosts σας μέσω του πρωτοκόλλου MCP",
+        "mcp_allow_writes" => "Να επιτρέπεται στον διακομιστή MCP να προσθέτει και να επεξεργάζεται hosts",
+        "mcp_allow_writes_desc" => "Επιτρέπει σε έναν βοηθό AI να δημιουργεί hosts και να αλλάζει τα πεδία τους μέσω MCP (create_host, update_host). Φάκελοι δεν δημιουργούνται ποτέ, proxies δεν ορίζονται ποτέ, και οι κωδικοί μόνο γράφονται. Απενεργοποιημένο από προεπιλογή.",
         "mcp_setup_guide" => "Οδηγός ρύθμισης",
         "mcp_copied" => "Αντιγράφηκε!",
         "mcp_info_title" => "Ρύθμιση διακομιστή MCP",
