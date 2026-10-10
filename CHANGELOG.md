@@ -17,6 +17,7 @@ project uses [SemVer](https://semver.org/spec/v2.0.0.html).
 - The debug log no longer carries the window and taskbar icons' pixel values that `iced_winit` reports at startup (8.8 MB per launch), so a session's log survives the next launch.
 
 ### Fixed
+- Windows: the network tools' Ping and Traceroute raw output no longer reads as mojibake. `ping` and `tracert` write their localized text in the console code page (GBK on a Chinese system), and the panel decoded the pipe as UTF-8, so every Chinese line came out as replacement characters.
 - A P2P sync round that pulled records now shows them at once: hosts, folders, keys, identities and host-key pins a peer pushed used to stay invisible until the next unlock.
 - Windows: an Oryxis window killed from Task Manager (or by a crash) no longer counts as still running once another program receives its process id, which refused the in-place update ("close the other Oryxis windows") and left a deep link unanswered until a reboot (#247, reported by @britarok2).
 

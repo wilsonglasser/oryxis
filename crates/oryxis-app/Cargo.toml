@@ -222,7 +222,9 @@ notify-rust = "4.18.1"
 # `windows` (0.62 above) and numbers on its own.
 # `Win32_NetworkManagement_IpHelper` is IcmpSendEcho2, the network
 # tools panel's unprivileged ping / traceroute on Windows.
-windows-sys = { version = "0.61", features = ["Win32_UI_Shell", "Win32_UI_WindowsAndMessaging", "Win32_Foundation", "Win32_System_Threading", "Win32_System_Diagnostics_Debug", "Win32_Security", "Win32_Security_Authorization", "Win32_System_Pipes", "Win32_Storage_Packaging_Appx", "Win32_System_Registry", "Win32_NetworkManagement_IpHelper"] }
+# `Win32_System_Console` + `Win32_Globalization` are GetConsoleOutputCP
+# and MultiByteToWideChar, for the code page `tracert` writes.
+windows-sys = { version = "0.61", features = ["Win32_UI_Shell", "Win32_UI_WindowsAndMessaging", "Win32_Foundation", "Win32_System_Threading", "Win32_System_Diagnostics_Debug", "Win32_System_Console", "Win32_Globalization", "Win32_Security", "Win32_Security_Authorization", "Win32_System_Pipes", "Win32_Storage_Packaging_Appx", "Win32_System_Registry", "Win32_NetworkManagement_IpHelper"] }
 # The #[implement] proc-macro's expansion references `::windows_core`
 # directly, so the COM objects in drag_out.rs need it as an explicit
 # dependency (same 0.62 line the `windows` crate itself resolves).
