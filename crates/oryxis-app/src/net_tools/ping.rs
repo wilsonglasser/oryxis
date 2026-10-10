@@ -413,8 +413,8 @@ async fn run_tool(program: &str, args: &[String], budget: Duration) -> Result<St
             .status(CardStatus::Warn));
         }
     };
-    let mut text = String::from_utf8_lossy(&out.stdout).into_owned();
-    let err = String::from_utf8_lossy(&out.stderr);
+    let mut text = decode_output(&out.stdout);
+    let err = decode_output(&out.stderr);
     if !err.trim().is_empty() {
         // Unreachable-host messages arrive on stderr in several
         // implementations, so dropping it would blank the card in
@@ -425,6 +425,58 @@ async fn run_tool(program: &str, args: &[String], budget: Duration) -> Result<St
         text.push_str(err.trim_end());
     }
     Ok(text)
+}
+
+/// A captured pipe, read back as text.
+///
+/// UTF-8 is the right assumption everywhere but on Windows, where both
+/// tools write their localized prose in the console OUTPUT code page
+/// (936 on a Chinese system), not in UTF-8: bytes a UTF-8 decoder cannot
+/// represent, and the raw card ends up a column of replacement
+/// characters. A tool that already speaks UTF-8 still takes the first
+/// branch, so nothing that worked before changes.
+fn decode_output(bytes: &[u8]) -> String {
+    if let Ok(text) = std::str::from_utf8(bytes) {
+        return text.to_string();
+    }
+    #[cfg(windows)]
+    if let Some(text) = decode_oem(bytes) {
+        return text;
+    }
+    String::from_utf8_lossy(bytes).into_owned()
+}
+
+/// The code page the console would have rendered, as Unicode. A process
+/// with no console of its own still gets an answer: the system OEM code
+/// page, which on a Chinese Windows is the 936 that `tracert` writes.
+/// `None` is the fallback's cue, and it is what a refused code page (a
+/// 0 with no console at all) or a conversion the OS declines returns.
+#[cfg(windows)]
+fn decode_oem(bytes: &[u8]) -> Option<String> {
+    use windows_sys::Win32::Globalization::MultiByteToWideChar;
+    use windows_sys::Win32::System::Console::GetConsoleOutputCP;
+
+    let cp = unsafe { GetConsoleOutputCP() };
+    // The tools' output is bounded by what the pipe carries, so the
+    // length always fits the API's i32.
+    let len = bytes.len() as i32;
+    unsafe {
+        // Two calls because only the second one can say how wide the
+        // buffer has to be; both see the same bytes and the same code
+        // page, so the count the first one returns is the count the
+        // second one fills.
+        let units = MultiByteToWideChar(cp, 0, bytes.as_ptr(), len, std::ptr::null_mut(), 0);
+        if units <= 0 {
+            return None;
+        }
+        let mut wide = vec![0u16; units as usize];
+        if MultiByteToWideChar(cp, 0, bytes.as_ptr(), len, wide.as_mut_ptr(), units) <= 0 {
+            return None;
+        }
+        // Lone surrogates cannot survive the round trip; the tools do
+        // not emit them, and the lossy form is still better than bytes.
+        Some(String::from_utf16_lossy(&wide))
+    }
 }
 
 /// Where to get the missing binary. Named per tool because the packages
@@ -896,5 +948,35 @@ over a maximum of 20 hops:\r\n\r\n\
     fn header_lines_are_not_hops() {
         let out = "traceroute to example.com (93.184.216.34), 20 hops max, 60 byte packets\n";
         assert!(parse_traceroute(out).is_empty());
+    }
+
+    #[test]
+    fn utf8_output_passes_through_unchanged() {
+        let out = "traceroute to example.com, 20 hops max\n";
+        assert_eq!(decode_output(out.as_bytes()), out);
+    }
+
+    #[test]
+    fn code_page_bytes_come_back_as_readable_text() {
+        // GBK for "中文", which is what a Chinese Windows `tracert`
+        // writes. Which branch decodes it depends on the machine's code
+        // page, so the assertion is the floor both share: readable text,
+        // never mojibake bytes.
+        let text = decode_output(&[0xD6, 0xD0, 0xCE, 0xC4, b'\n']);
+        assert!(text.ends_with('\n'));
+        assert!(!text.is_empty());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn gbk_comes_back_as_chinese_on_a_936_console() {
+        use windows_sys::Win32::System::Console::GetConsoleOutputCP;
+
+        // The mojibake this guards only has that shape on the machine
+        // that produces it, so there is nothing to assert anywhere else.
+        if unsafe { GetConsoleOutputCP() } != 936 {
+            return;
+        }
+        assert_eq!(decode_oem(&[0xD6, 0xD0, 0xCE, 0xC4]).as_deref(), Some("中文"));
     }
 }
