@@ -578,6 +578,7 @@ impl Oryxis {
             }
             m @ (SnippetMessage::SnippetRunTimer(..)
             | SnippetMessage::SnippetRunFileWritten(..)
+            | SnippetMessage::SnippetClipboardResolved(..)
             | SnippetMessage::CancelSnippetRun(_)) => {
                 return self.handle_snippet_run(m).unwrap_or_else(crate::dispatch::unrouted);
             }

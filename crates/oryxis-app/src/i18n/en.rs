@@ -1280,6 +1280,8 @@ pub(super) fn lookup(key: &str) -> &'static str {
         "snippet_save_mode_append" => "Append to the file",
         "snippet_save_mode_new_file" => "Write a new file",
         "snippet_step_action" => "App action",
+        "snippet_run_clipboard_empty" => "the clipboard is empty or unavailable",
+        "snippet_run_paste_cancelled" => "the clipboard paste was cancelled",
         "snippet_step_action_line" => "Action: {action}",
         "snippet_step_action_missing" => "pick an action",
         "snippet_step_bad_number" => "enter a number of seconds",

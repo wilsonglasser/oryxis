@@ -8,7 +8,7 @@ use oryxis_core::login_script::ExpectPattern;
 use oryxis_core::models::{SaveFileContent, SaveFileMode, SaveFileStep, SnippetStep, SnippetWait};
 use uuid::Uuid;
 
-use crate::hotkeys::HotkeyAction;
+use crate::snippet_run::SnippetAction;
 
 #[derive(Debug)]
 pub(crate) struct SnippetForm {
@@ -101,7 +101,7 @@ impl StepKind {
 pub(crate) struct StepForm {
     pub(crate) kind: StepKind,
     pub(crate) command: iced::widget::text_editor::Content,
-    pub(crate) action: Option<HotkeyAction>,
+    pub(crate) action: Option<SnippetAction>,
     pub(crate) pattern: String,
     pub(crate) regex: bool,
     /// Seconds as typed; empty = the default.

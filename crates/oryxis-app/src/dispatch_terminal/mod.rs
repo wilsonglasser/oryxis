@@ -1045,13 +1045,20 @@ impl Oryxis {
                                 }
                             }
                         }
-                        None => self.write_paste_to_tab(tab_id, &text),
+                        None => {
+                            self.write_paste_to_tab(tab_id, &text);
+                            return self.finish_snippet_clipboard_paste(tab_id);
+                        }
                     }
                 }
             }
             TerminalMessage::CancelPendingPaste => {
+                let tab_id = self.pending_paste.as_ref().map(|(id, _)| *id);
                 self.pending_paste = None;
                 self.pending_paste_install = None;
+                if let Some(tab_id) = tab_id {
+                    return self.cancel_snippet_clipboard_paste(tab_id);
+                }
             }
             // Synthesized input from the terminal widget: mouse-tracking
             // reports (tmux `mouse on`, vim `mouse=a`, htop, ...) and the

@@ -216,7 +216,7 @@ impl Oryxis {
                     nav,
                     RowAction::picker(prev, next),
                     crate::widgets::INPUT_RADIUS,
-                    pick_list(row.action, actions, |a: &crate::hotkeys::HotkeyAction| t(a.label_key()).to_string())
+                    pick_list(row.action, actions, |a: &crate::snippet_run::SnippetAction| t(a.label_key()).to_string())
                         .placeholder(t("snippet_step_pick_action"))
                         .on_select(move |a| snip(SnippetMessage::SnippetStepActionPicked(i, a)))
                         .on_open(Message::Navigation(NavigationMessage::PickOpenChanged(true)))

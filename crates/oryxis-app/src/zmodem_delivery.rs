@@ -694,7 +694,10 @@ mod tests {
         h.started("notes.txt").await;
         h.answer(Some(h.dest.clone()));
         let parked = h.dest.join("report.pdf");
-        h.wait_until(|| parked.exists()).await;
+        // `place_file` reserves the destination with an empty marker before
+        // replacing it, so existence alone can observe the marker mid-move.
+        h.wait_until(|| std::fs::read(&parked).is_ok_and(|bytes| bytes == b"new"))
+            .await;
         assert_eq!(std::fs::read(&parked).unwrap(), b"new");
         // Once the folder is known, the announced name travels too.
         h.finish("notes (1).txt", b"n");

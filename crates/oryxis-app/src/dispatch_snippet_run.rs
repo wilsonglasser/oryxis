@@ -12,13 +12,13 @@
 
 use iced::Task;
 use oryxis_core::models::{
-    SaveFileContent, SaveFileMode, SaveFileStep, SnippetStep, SnippetWait, DEFAULT_WAIT_TIMEOUT_MS,
+    DEFAULT_WAIT_TIMEOUT_MS, SaveFileContent, SaveFileMode, SaveFileStep, SnippetStep, SnippetWait,
 };
 use uuid::Uuid;
 
 use crate::app::{Message, Oryxis};
 use crate::messages::{SnippetMessage, TerminalMessage};
-use crate::snippet_run::{RunMark, RunWait, SnippetRun};
+use crate::snippet_run::{RunMark, RunWait, SnippetAction, SnippetRun};
 
 impl Oryxis {
     /// Start `steps` (already expanded, variables filled) on the active
@@ -45,9 +45,8 @@ impl Oryxis {
         steps: Vec<SnippetStep>,
     ) -> Task<Message> {
         if let Some(busy) = self.snippet_runs.iter().find(|r| r.pane_id == pane_id) {
-            return self.show_toast(
-                crate::i18n::t("snippet_run_busy").replace("{name}", &busy.label),
-            );
+            return self
+                .show_toast(crate::i18n::t("snippet_run_busy").replace("{name}", &busy.label));
         }
         self.snippet_run_seq += 1;
         let id = self.snippet_run_seq;
@@ -87,11 +86,15 @@ impl Oryxis {
                     }
                     // Read before the send: the input capture moves the
                     // pane to Busy as the command goes out.
-                    let at_prompt = self
-                        .pane_by_id(pane_id)
-                        .is_some_and(|p| matches!(p.prompt, crate::state::PromptState::AtPrompt { .. }));
+                    let at_prompt = self.pane_by_id(pane_id).is_some_and(|p| {
+                        matches!(p.prompt, crate::state::PromptState::AtPrompt { .. })
+                    });
                     if !self.write_snippet_command(pane_id, &text) {
-                        tasks.push(self.stop_snippet_run(run_id, "snippet_run_pane_unavailable", None));
+                        tasks.push(self.stop_snippet_run(
+                            run_id,
+                            "snippet_run_pane_unavailable",
+                            None,
+                        ));
                         break;
                     }
                     if let Some(run) = self.snippet_run_mut(run_id) {
@@ -103,33 +106,62 @@ impl Oryxis {
                 }
                 SnippetStep::Action { id } => {
                     let Some(action) = crate::snippet_run::step_action(&id) else {
-                        tasks.push(self.stop_snippet_run(run_id, "snippet_run_action_refused", Some(&id)));
+                        tasks.push(self.stop_snippet_run(
+                            run_id,
+                            "snippet_run_action_refused",
+                            Some(&id),
+                        ));
                         break;
                     };
-                    use crate::hotkeys::HotkeyAction as A;
+                    use SnippetAction as A;
                     let msg = match action {
-                        A::TerminalClearScrollback => TerminalMessage::TerminalClearScrollback(pane_id),
-                        A::TerminalCopyScreen => TerminalMessage::TerminalCopyScreen(pane_id),
-                        A::TerminalCopyLastCommand => TerminalMessage::TerminalCopyLastCommand(pane_id),
-                        A::TerminalSaveOutput => TerminalMessage::TerminalSaveOutput(pane_id),
-                        // `step_action` answers only the four above.
-                        _ => continue,
+                        A::ClearScrollback => {
+                            TerminalMessage::TerminalClearScrollback(pane_id)
+                        }
+                        A::CopyScreen => TerminalMessage::TerminalCopyScreen(pane_id),
+                        A::CopyLastCommand => {
+                            TerminalMessage::TerminalCopyLastCommand(pane_id)
+                        }
+                        A::SaveOutput => TerminalMessage::TerminalSaveOutput(pane_id),
+                        A::PasteAndRun => {
+                            let task = self.arm_snippet_wait(run_id, RunWait::Clipboard, None);
+                            let generation = self
+                                .snippet_runs
+                                .iter()
+                                .find(|r| r.id == run_id)
+                                .map_or(0, |r| r.generation);
+                            tasks.push(task);
+                            tasks.push(crate::dispatch_global::read_clipboard_text(move |text| {
+                                Message::Snippet(SnippetMessage::SnippetClipboardResolved(
+                                    run_id,
+                                    generation,
+                                    text.map(Into::into),
+                                ))
+                            }));
+                            break;
+                        }
                     };
                     tasks.push(self.update(Message::Terminal(msg)));
                     // Save Output asks where the text goes: the next
                     // command waits for the answer instead of being
                     // typed under the dialog.
-                    if action == A::TerminalSaveOutput && self.save_output.is_some() {
+                    if action == A::SaveOutput && self.save_output.is_some() {
                         tasks.push(self.arm_snippet_wait(run_id, RunWait::Dialog, None));
                         break;
                     }
                 }
-                SnippetStep::Wait(SnippetWait::CommandEnd { timeout_ms, continue_on_error }) => {
+                SnippetStep::Wait(SnippetWait::CommandEnd {
+                    timeout_ms,
+                    continue_on_error,
+                }) => {
                     let (integrated, busy) = self
                         .pane_by_id(pane_id)
                         .map(|p| {
                             use crate::state::PromptState as P;
-                            (!matches!(p.prompt, P::NoIntegration), matches!(p.prompt, P::Busy))
+                            (
+                                !matches!(p.prompt, P::NoIntegration),
+                                matches!(p.prompt, P::Busy),
+                            )
                         })
                         .unwrap_or((false, false));
                     // A command this run just sent is waited for even
@@ -151,23 +183,31 @@ impl Oryxis {
                     let ready = if sent > 0 { at_prompt_at_send } else { busy };
                     tasks.push(self.arm_snippet_wait(
                         run_id,
-                        RunWait::CommandEnd { continue_on_error, ready },
+                        RunWait::CommandEnd {
+                            continue_on_error,
+                            ready,
+                        },
                         Some(timeout_ms),
                     ));
                     break;
                 }
-                SnippetStep::Wait(SnippetWait::Output { pattern, timeout_ms }) => {
-                    match oryxis_core::login_script::OutputMatcher::new(&pattern) {
-                        Ok(matcher) => {
-                            tasks.push(self.arm_snippet_wait(run_id, RunWait::Output(matcher), Some(timeout_ms)));
-                            break;
-                        }
-                        Err(_) => {
-                            tasks.push(self.stop_snippet_run(run_id, "snippet_run_bad_pattern", None));
-                            break;
-                        }
+                SnippetStep::Wait(SnippetWait::Output {
+                    pattern,
+                    timeout_ms,
+                }) => match oryxis_core::login_script::OutputMatcher::new(&pattern) {
+                    Ok(matcher) => {
+                        tasks.push(self.arm_snippet_wait(
+                            run_id,
+                            RunWait::Output(matcher),
+                            Some(timeout_ms),
+                        ));
+                        break;
                     }
-                }
+                    Err(_) => {
+                        tasks.push(self.stop_snippet_run(run_id, "snippet_run_bad_pattern", None));
+                        break;
+                    }
+                },
                 SnippetStep::Wait(SnippetWait::Time { ms }) => {
                     tasks.push(self.arm_snippet_wait(run_id, RunWait::Timer, Some(ms.max(1))));
                     break;
@@ -198,7 +238,12 @@ impl Oryxis {
     /// Park the run on `wait`; a wait with a timeout arms its timer (a
     /// time wait's timer is its duration). `Some(0)` is the default
     /// timeout.
-    fn arm_snippet_wait(&mut self, run_id: u64, wait: RunWait, timeout_ms: Option<u32>) -> Task<Message> {
+    fn arm_snippet_wait(
+        &mut self,
+        run_id: u64,
+        wait: RunWait,
+        timeout_ms: Option<u32>,
+    ) -> Task<Message> {
         let Some(run) = self.snippet_run_mut(run_id) else {
             return Task::none();
         };
@@ -208,7 +253,8 @@ impl Oryxis {
         match timeout_ms {
             Some(ms) => {
                 let ms = if ms == 0 { DEFAULT_WAIT_TIMEOUT_MS } else { ms };
-                let (task, handle) = snippet_run_timer(run_id, run.generation, u64::from(ms)).abortable();
+                let (task, handle) =
+                    snippet_run_timer(run_id, run.generation, u64::from(ms)).abortable();
                 run.timer = Some(handle.abort_on_drop());
                 task
             }
@@ -226,6 +272,41 @@ impl Oryxis {
             run.at_prompt_at_send = false;
         }
         self.advance_snippet_run(run_id)
+    }
+
+    /// Finish a clipboard-and-run action after the paste guard, if any, has
+    /// been confirmed. The newline is sent separately so bracketed paste
+    /// remains intact.
+    pub(crate) fn finish_snippet_clipboard_paste(&mut self, tab_id: Uuid) -> Task<Message> {
+        let Some((run_id, pane_id, execute)) = self.snippet_runs.iter().find_map(|run| {
+            let tab = self
+                .pane_tab_index(run.pane_id)
+                .and_then(|i| self.tabs.get(i))?;
+            (tab._id == tab_id).then_some((
+                run.id,
+                run.pane_id,
+                matches!(run.wait, Some(RunWait::Clipboard)),
+            ))
+        }) else {
+            return Task::none();
+        };
+        if execute && let Some(tab_idx) = self.pane_tab_index(pane_id) {
+            self.write_input_to_tab(tab_idx, b"\n");
+        }
+        self.resume_snippet_run(run_id)
+    }
+
+    pub(crate) fn cancel_snippet_clipboard_paste(&mut self, tab_id: Uuid) -> Task<Message> {
+        let run_id = self.snippet_runs.iter().find_map(|run| {
+            let tab = self
+                .pane_tab_index(run.pane_id)
+                .and_then(|i| self.tabs.get(i))?;
+            (tab._id == tab_id && matches!(run.wait, Some(RunWait::Clipboard)))
+                .then_some(run.id)
+        });
+        run_id.map_or_else(Task::none, |id| {
+            self.stop_snippet_run(id, "snippet_run_paste_cancelled", None)
+        })
     }
 
     /// End the run and say why (`key` an i18n key, `{step}` its detail).
@@ -261,7 +342,11 @@ impl Oryxis {
         // A typed command ends whatever a login script was waiting for,
         // like the user's own keystroke would.
         self.abort_login_script(pane_id);
-        let Some(pane) = self.tabs.get_mut(tab_idx).and_then(|t| t.pane_by_id_mut(pane_id)) else {
+        let Some(pane) = self
+            .tabs
+            .get_mut(tab_idx)
+            .and_then(|t| t.pane_by_id_mut(pane_id))
+        else {
             return false;
         };
         if pane.zmodem.is_some() {
@@ -277,7 +362,11 @@ impl Oryxis {
         Self::write_bytes_to_pane(pane, &payload, snap);
         // The command history reads the ACTIVE pane's input; a run on a
         // pane that has lost the focus still runs, it is just not recorded.
-        if self.tabs.get(tab_idx).is_some_and(|t| t.active().id == pane_id) {
+        if self
+            .tabs
+            .get(tab_idx)
+            .is_some_and(|t| t.active().id == pane_id)
+        {
             self.feed_input_capture(tab_idx, &payload);
         }
         true
@@ -291,15 +380,21 @@ impl Oryxis {
         pane_id: Uuid,
         file: &SaveFileStep,
     ) -> Result<Task<Message>, &'static str> {
-        let pane = self.pane_by_id(pane_id).ok_or("snippet_run_pane_unavailable")?;
+        let pane = self
+            .pane_by_id(pane_id)
+            .ok_or("snippet_run_pane_unavailable")?;
         let text = {
-            let state = pane.terminal.lock().map_err(|_| "snippet_run_pane_unavailable")?;
+            let state = pane
+                .terminal
+                .lock()
+                .map_err(|_| "snippet_run_pane_unavailable")?;
             match file.content {
                 SaveFileContent::Screen => state.visible_text(),
                 SaveFileContent::Buffer => state.all_text(),
-                SaveFileContent::LastCommand => {
-                    state.last_command().map_err(|_| "snippet_run_no_last_command")?.to_text()
-                }
+                SaveFileContent::LastCommand => state
+                    .last_command()
+                    .map_err(|_| "snippet_run_no_last_command")?
+                    .to_text(),
             }
         };
         let label = pane.label.clone();
@@ -309,12 +404,18 @@ impl Oryxis {
             .ok_or("snippet_run_bad_file_name")?;
         let dir = self.snippet_output_dir();
         let mode = file.mode;
-        let generation = self.snippet_runs.iter().find(|r| r.id == run_id).map_or(0, |r| r.generation);
+        let generation = self
+            .snippet_runs
+            .iter()
+            .find(|r| r.id == run_id)
+            .map_or(0, |r| r.generation);
         Ok(Task::perform(
             tokio::task::spawn_blocking(move || write_snippet_output(&dir, &name, mode, &text)),
             move |res| {
                 let outcome = res.unwrap_or_else(|e| Err(e.to_string()));
-                Message::Snippet(SnippetMessage::SnippetRunFileWritten(run_id, generation, outcome))
+                Message::Snippet(SnippetMessage::SnippetRunFileWritten(
+                    run_id, generation, outcome,
+                ))
             },
         ))
     }
@@ -350,13 +451,22 @@ impl Oryxis {
     pub(crate) fn snippet_output_wait_unsent(&self, pane_id: Uuid) -> Option<(u64, u64)> {
         self.snippet_runs
             .iter()
-            .find(|r| r.pane_id == pane_id && r.sent_commands == 0 && matches!(r.wait, Some(RunWait::Output(_))))
+            .find(|r| {
+                r.pane_id == pane_id
+                    && r.sent_commands == 0
+                    && matches!(r.wait, Some(RunWait::Output(_)))
+            })
             .map(|r| (r.id, r.generation))
     }
 
     /// One output batch of `pane_id` (the cleaned bytes the emulator
     /// got), for the output wait `wait` (`snippet_output_wait`).
-    pub(crate) fn snippet_run_output(&mut self, pane_id: Uuid, bytes: &[u8], wait: (u64, u64)) -> Task<Message> {
+    pub(crate) fn snippet_run_output(
+        &mut self,
+        pane_id: Uuid,
+        bytes: &[u8],
+        wait: (u64, u64),
+    ) -> Task<Message> {
         let Some(run) = self
             .snippet_runs
             .iter_mut()
@@ -383,7 +493,11 @@ impl Oryxis {
         let Some(run) = self.snippet_runs.iter_mut().find(|r| r.pane_id == pane_id) else {
             return Task::none();
         };
-        let Some(RunWait::CommandEnd { continue_on_error, ready }) = run.wait.as_mut() else {
+        let Some(RunWait::CommandEnd {
+            continue_on_error,
+            ready,
+        }) = run.wait.as_mut()
+        else {
             return Task::none();
         };
         let continue_on_error = *continue_on_error;
@@ -422,7 +536,10 @@ impl Oryxis {
             .filter(|r| matches!(r.wait, Some(RunWait::Dialog)))
             .map(|r| r.id)
             .collect();
-        answered.into_iter().map(|id| self.resume_snippet_run(id)).collect()
+        answered
+            .into_iter()
+            .map(|id| self.resume_snippet_run(id))
+            .collect()
     }
 
     /// The run on `pane_id`, for the status line: (label, step, steps).
@@ -433,7 +550,10 @@ impl Oryxis {
             .map(|r| (r.id, r.label.as_str(), r.next.max(1), r.steps.len()))
     }
 
-    pub(crate) fn handle_snippet_run(&mut self, message: SnippetMessage) -> Result<Task<Message>, SnippetMessage> {
+    pub(crate) fn handle_snippet_run(
+        &mut self,
+        message: SnippetMessage,
+    ) -> Result<Task<Message>, SnippetMessage> {
         match message {
             SnippetMessage::SnippetRunTimer(run_id, generation) => {
                 let Some(run) = self.snippet_runs.iter().find(|r| r.id == run_id) else {
@@ -448,21 +568,63 @@ impl Oryxis {
                         // No mark ever seen on the pane: the shell does
                         // not report command ends, which is the useful
                         // thing to say.
-                        let integrated = self
-                            .pane_by_id(run.pane_id)
-                            .is_some_and(|p| !matches!(p.prompt, crate::state::PromptState::NoIntegration));
-                        let key = if integrated { "snippet_run_timed_out" } else { "snippet_run_no_integration" };
+                        let integrated = self.pane_by_id(run.pane_id).is_some_and(|p| {
+                            !matches!(p.prompt, crate::state::PromptState::NoIntegration)
+                        });
+                        let key = if integrated {
+                            "snippet_run_timed_out"
+                        } else {
+                            "snippet_run_no_integration"
+                        };
                         self.stop_snippet_run(run_id, key, None)
                     }
-                    Some(RunWait::Output(_)) => self.stop_snippet_run(run_id, "snippet_run_timed_out", None),
-                    Some(RunWait::File) | Some(RunWait::Dialog) | None => Task::none(),
+                    Some(RunWait::Output(_)) => {
+                        self.stop_snippet_run(run_id, "snippet_run_timed_out", None)
+                    }
+                    Some(RunWait::File)
+                    | Some(RunWait::Dialog)
+                    | Some(RunWait::Clipboard)
+                    | None => Task::none(),
                 })
             }
+            SnippetMessage::SnippetClipboardResolved(run_id, generation, text) => {
+                let Some(pane_id) = self.snippet_runs.iter().find_map(|r| {
+                    (r.id == run_id
+                        && r.generation == generation
+                        && matches!(r.wait, Some(RunWait::Clipboard)))
+                        .then_some(r.pane_id)
+                }) else {
+                    return Ok(Task::none());
+                };
+                let Some(tab_id) = self
+                    .pane_tab_index(pane_id)
+                    .and_then(|i| self.tabs.get(i))
+                    .map(|tab| tab._id)
+                else {
+                    return Ok(self.stop_snippet_run(run_id, "snippet_run_pane_unavailable", None));
+                };
+                let Some(text) = text
+                    .map(crate::messages::Redacted::into_inner)
+                    .filter(|t| !t.is_empty())
+                else {
+                    return Ok(self.stop_snippet_run(run_id, "snippet_run_clipboard_empty", None));
+                };
+                self.paste_text_into_tab(tab_id, &text);
+                if self
+                    .pending_paste
+                    .as_ref()
+                    .is_some_and(|(id, _)| *id == tab_id)
+                {
+                    return Ok(Task::none());
+                }
+                Ok(self.finish_snippet_clipboard_paste(tab_id))
+            }
             SnippetMessage::SnippetRunFileWritten(run_id, generation, outcome) => {
-                let current = self
-                    .snippet_runs
-                    .iter()
-                    .any(|r| r.id == run_id && r.generation == generation && matches!(r.wait, Some(RunWait::File)));
+                let current = self.snippet_runs.iter().any(|r| {
+                    r.id == run_id
+                        && r.generation == generation
+                        && matches!(r.wait, Some(RunWait::File))
+                });
                 match outcome {
                     Ok(path) => {
                         let toast = self.show_toast(
@@ -473,7 +635,9 @@ impl Oryxis {
                         }
                         Ok(toast)
                     }
-                    Err(e) if current => Ok(self.stop_snippet_run(run_id, "snippet_run_write_failed", Some(&e))),
+                    Err(e) if current => {
+                        Ok(self.stop_snippet_run(run_id, "snippet_run_write_failed", Some(&e)))
+                    }
                     Err(e) => Ok(self.show_toast(
                         crate::i18n::t("terminal_save_output_failed").replace("{error}", &e),
                     )),
@@ -534,7 +698,11 @@ fn write_snippet_output(
                     0 => dir.join(name),
                     n => dir.join(format!("{stem}-{n}{ext}")),
                 };
-                match std::fs::OpenOptions::new().write(true).create_new(true).open(&candidate) {
+                match std::fs::OpenOptions::new()
+                    .write(true)
+                    .create_new(true)
+                    .open(&candidate)
+                {
                     Ok(file) => {
                         found = Some((file, candidate));
                         break;
@@ -549,7 +717,6 @@ fn write_snippet_output(
     file.write_all(body.as_bytes()).map_err(|e| e.to_string())?;
     Ok(path.display().to_string())
 }
-
 
 /// What a toast says when a snippet's actions cannot be laid out.
 pub(crate) fn plan_error_text(label: &str, error: &crate::snippet_run::PlanError) -> String {
@@ -575,7 +742,9 @@ impl Oryxis {
                     .unwrap_or_else(|| id.clone());
                 t("snippet_step_action_line").replace("{action}", &name)
             }
-            SnippetStep::Wait(SnippetWait::CommandEnd { .. }) => t("snippet_step_wait_command_end").to_string(),
+            SnippetStep::Wait(SnippetWait::CommandEnd { .. }) => {
+                t("snippet_step_wait_command_end").to_string()
+            }
             SnippetStep::Wait(SnippetWait::Output { pattern, .. }) => {
                 let shown = match pattern {
                     oryxis_core::login_script::ExpectPattern::Suffix(s) => s.clone(),
@@ -603,7 +772,11 @@ impl Oryxis {
 
     /// Every step, one per line.
     pub(crate) fn describe_snippet_steps(&self, steps: &[SnippetStep]) -> String {
-        steps.iter().map(|s| self.describe_snippet_step(s)).collect::<Vec<_>>().join("\n")
+        steps
+            .iter()
+            .map(|s| self.describe_snippet_step(s))
+            .collect::<Vec<_>>()
+            .join("\n")
     }
 }
 
@@ -652,7 +825,9 @@ impl Oryxis {
         let due = std::mem::take(&mut self.startup_runs_due);
         Task::batch(
             due.into_iter()
-                .map(|(pane_id, label, steps)| self.start_snippet_run_on_pane(pane_id, label, steps))
+                .map(|(pane_id, label, steps)| {
+                    self.start_snippet_run_on_pane(pane_id, label, steps)
+                })
                 .collect::<Vec<_>>(),
         )
     }

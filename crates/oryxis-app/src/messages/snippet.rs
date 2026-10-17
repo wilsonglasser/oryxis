@@ -43,6 +43,8 @@ pub enum SnippetMessage {
     /// A save step's write finished (`run id`, `generation`, the path
     /// written or the error).
     SnippetRunFileWritten(u64, u64, Result<String, String>),
+    /// Clipboard text handed back for a paste action in a running snippet.
+    SnippetClipboardResolved(u64, u64, Option<super::Redacted>),
     /// Stop a snippet run (its status line's Cancel).
     CancelSnippetRun(u64),
     /// Snippet editor: arm the shortcut recorder (next chord binds).
@@ -61,7 +63,7 @@ pub enum SnippetMessage {
     /// Snippet editor: switch a row's kind.
     SnippetStepKindPicked(usize, crate::state::StepKind),
     /// Snippet editor: the app action an action row runs.
-    SnippetStepActionPicked(usize, crate::hotkeys::HotkeyAction),
+    SnippetStepActionPicked(usize, crate::snippet_run::SnippetAction),
     /// Snippet editor: the snippet a "run snippet" row runs.
     SnippetStepSnippetPicked(usize, uuid::Uuid),
     SnippetStepPatternChanged(usize, String),

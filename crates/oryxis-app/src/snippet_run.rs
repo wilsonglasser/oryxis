@@ -14,23 +14,64 @@ use oryxis_core::login_script::OutputMatcher;
 use oryxis_core::models::{Snippet, SnippetStep};
 use uuid::Uuid;
 
-use crate::hotkeys::HotkeyAction;
+/// App actions that are safe to run against the pane owned by a snippet.
+/// These are deliberately separate from global hotkeys: a snippet action is
+/// never exposed as a user shortcut and always targets its run's pane.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum SnippetAction {
+    ClearScrollback,
+    CopyScreen,
+    CopyLastCommand,
+    SaveOutput,
+    PasteAndRun,
+}
+
+impl SnippetAction {
+    pub(crate) fn all() -> &'static [Self] {
+        use SnippetAction::*;
+        &[
+            ClearScrollback,
+            CopyScreen,
+            CopyLastCommand,
+            SaveOutput,
+            PasteAndRun,
+        ]
+    }
+
+    pub(crate) fn id(self) -> &'static str {
+        match self {
+            Self::ClearScrollback => "terminal_clear_scrollback",
+            Self::CopyScreen => "terminal_copy_screen",
+            Self::CopyLastCommand => "terminal_copy_last_command",
+            Self::SaveOutput => "terminal_save_output",
+            Self::PasteAndRun => "terminal_paste_and_run",
+        }
+    }
+
+    pub(crate) fn label_key(self) -> &'static str {
+        match self {
+            Self::ClearScrollback => "terminal_clear_scrollback",
+            Self::CopyScreen => "terminal_copy_screen",
+            Self::CopyLastCommand => "terminal_copy_last_command",
+            Self::SaveOutput => "terminal_save_output",
+            Self::PasteAndRun => "snippet_run",
+        }
+    }
+}
 
 /// The app actions a snippet step may run: pane actions only, each aimed
 /// at the pane the run belongs to. Anything else a step names (a newer
 /// build's action, a tab or vault verb arriving by sync) stops the run.
-pub(crate) fn allowed_step_actions() -> &'static [HotkeyAction] {
-    &[
-        HotkeyAction::TerminalClearScrollback,
-        HotkeyAction::TerminalCopyScreen,
-        HotkeyAction::TerminalCopyLastCommand,
-        HotkeyAction::TerminalSaveOutput,
-    ]
+pub(crate) fn allowed_step_actions() -> &'static [SnippetAction] {
+    SnippetAction::all()
 }
 
 /// The allowed action a step's id names, if any.
-pub(crate) fn step_action(id: &str) -> Option<HotkeyAction> {
-    allowed_step_actions().iter().copied().find(|a| a.id() == id)
+pub(crate) fn step_action(id: &str) -> Option<SnippetAction> {
+    allowed_step_actions()
+        .iter()
+        .copied()
+        .find(|a| a.id() == id)
 }
 
 /// Why a snippet's actions cannot be laid out for a run.
@@ -72,7 +113,10 @@ fn expand(
     for step in snippet.actions() {
         match step {
             SnippetStep::RunSnippet { id } => {
-                let inner = snippets.iter().find(|s| s.id == id).ok_or(PlanError::Missing)?;
+                let inner = snippets
+                    .iter()
+                    .find(|s| s.id == id)
+                    .ok_or(PlanError::Missing)?;
                 if inner.install {
                     return Err(PlanError::Install(inner.label.clone()));
                 }
@@ -107,7 +151,12 @@ pub(crate) fn would_cycle(
     let mut probe = Snippet::new(label, "");
     probe.id = id;
     probe.steps = steps.to_vec();
-    let others: Vec<Snippet> = snippets.iter().filter(|s| s.id != id).cloned().chain([probe.clone()]).collect();
+    let others: Vec<Snippet> = snippets
+        .iter()
+        .filter(|s| s.id != id)
+        .cloned()
+        .chain([probe.clone()])
+        .collect();
     match flatten(&others, &probe) {
         Err(PlanError::Cycle(label)) => Some(label),
         _ => None,
@@ -150,7 +199,13 @@ pub(crate) fn save_file_name(template: &str, host: &str, date: &str) -> Option<S
     let expanded = template.replace("{host}", host).replace("{date}", date);
     let mut name: String = expanded
         .chars()
-        .map(|c| if c.is_alphanumeric() || matches!(c, '-' | '_' | '.' | ' ') { c } else { '_' })
+        .map(|c| {
+            if c.is_alphanumeric() || matches!(c, '-' | '_' | '.' | ' ') {
+                c
+            } else {
+                '_'
+            }
+        })
         .collect();
     name = name.trim().to_string();
     while name.starts_with('.') || name.starts_with('-') {
@@ -172,7 +227,14 @@ pub(crate) fn save_file_name(template: &str, host: &str, date: &str) -> Option<S
     if name.chars().all(|c| c == '_' || c == '.') {
         return None;
     }
-    let stem: Vec<char> = name.split('.').next().unwrap_or("").trim_end().to_uppercase().chars().collect();
+    let stem: Vec<char> = name
+        .split('.')
+        .next()
+        .unwrap_or("")
+        .trim_end()
+        .to_uppercase()
+        .chars()
+        .collect();
     let word: String = stem.iter().take(3).collect();
     let device = (matches!(word.as_str(), "CON" | "PRN" | "AUX" | "NUL") && stem.len() == 3)
         || (matches!(word.as_str(), "COM" | "LPT")
@@ -231,7 +293,10 @@ pub(crate) enum RunWait {
     /// at the first end the shell marks (one wait per command when each
     /// has to finish): counting steps as ends would hang on any line a
     /// program reads.
-    CommandEnd { continue_on_error: bool, ready: bool },
+    CommandEnd {
+        continue_on_error: bool,
+        ready: bool,
+    },
     /// A pattern in the pane's output.
     Output(OutputMatcher),
     /// A timer.
@@ -240,6 +305,8 @@ pub(crate) enum RunWait {
     File,
     /// The Save Output dialog an action step opened.
     Dialog,
+    /// Waiting for the clipboard read started by a paste action.
+    Clipboard,
 }
 
 /// The shell-integration marks a command-end wait reads, in the order a
@@ -274,17 +341,28 @@ mod tests {
 
     #[test]
     fn an_install_script_is_never_run_from_another_snippet() {
-        let mut install = snip("setup", vec![SnippetStep::Command { text: "curl x | sh".into() }]);
+        let mut install = snip(
+            "setup",
+            vec![SnippetStep::Command {
+                text: "curl x | sh".into(),
+            }],
+        );
         install.install = true;
         let outer = snip("outer", vec![SnippetStep::RunSnippet { id: install.id }]);
         let all = vec![install.clone(), outer.clone()];
-        assert_eq!(flatten(&all, &outer), Err(PlanError::Install("setup".into())));
+        assert_eq!(
+            flatten(&all, &outer),
+            Err(PlanError::Install("setup".into()))
+        );
     }
 
     #[test]
     fn a_ready_wait_takes_the_next_end() {
         let mut ready = true;
-        assert_eq!(command_end_in(&mut ready, &[RunMark::End(Some(0))]), Some(Some(0)));
+        assert_eq!(
+            command_end_in(&mut ready, &[RunMark::End(Some(0))]),
+            Some(Some(0))
+        );
     }
 
     #[test]
@@ -296,7 +374,10 @@ mod tests {
         assert_eq!(command_end_in(&mut ready, &batch), None);
         assert!(ready);
         // Its own C and D come later.
-        assert_eq!(command_end_in(&mut ready, &[RunMark::Ready, RunMark::End(Some(2))]), Some(Some(2)));
+        assert_eq!(
+            command_end_in(&mut ready, &[RunMark::Ready, RunMark::End(Some(2))]),
+            Some(Some(2))
+        );
     }
 
     #[test]
@@ -304,8 +385,14 @@ mod tests {
         // A PS1-only scheme prints D;A;B with every prompt and nothing at
         // the command's start: the prompt's B is the readiness.
         let mut ready = false;
-        assert_eq!(command_end_in(&mut ready, &[RunMark::End(None), RunMark::Ready]), None);
-        assert_eq!(command_end_in(&mut ready, &[RunMark::End(Some(1)), RunMark::Ready]), Some(Some(1)));
+        assert_eq!(
+            command_end_in(&mut ready, &[RunMark::End(None), RunMark::Ready]),
+            None
+        );
+        assert_eq!(
+            command_end_in(&mut ready, &[RunMark::End(Some(1)), RunMark::Ready]),
+            Some(Some(1))
+        );
     }
 
     fn snip(label: &str, steps: Vec<SnippetStep>) -> Snippet {
@@ -321,9 +408,15 @@ mod tests {
     #[test]
     fn a_nested_snippet_is_expanded_in_place() {
         let inner = snip("inner", vec![cmd("b"), cmd("c")]);
-        let outer = snip("outer", vec![cmd("a"), SnippetStep::RunSnippet { id: inner.id }, cmd("d")]);
+        let outer = snip(
+            "outer",
+            vec![cmd("a"), SnippetStep::RunSnippet { id: inner.id }, cmd("d")],
+        );
         let all = vec![inner.clone(), outer.clone()];
-        assert_eq!(flatten(&all, &outer).unwrap(), vec![cmd("a"), cmd("b"), cmd("c"), cmd("d")]);
+        assert_eq!(
+            flatten(&all, &outer).unwrap(),
+            vec![cmd("a"), cmd("b"), cmd("c"), cmd("d")]
+        );
     }
 
     #[test]
@@ -335,26 +428,51 @@ mod tests {
         assert_eq!(flatten(&all, &a), Err(PlanError::Cycle("a".into())));
         assert_eq!(would_cycle(&all, b.id, "b", &b.steps), Some("b".into()));
         // The same snippet twice in a row is a repeat, not a cycle.
-        let c = snip("c", vec![SnippetStep::RunSnippet { id: b.id }, SnippetStep::RunSnippet { id: b.id }]);
+        let c = snip(
+            "c",
+            vec![
+                SnippetStep::RunSnippet { id: b.id },
+                SnippetStep::RunSnippet { id: b.id },
+            ],
+        );
         let leaf = snip("leaf", vec![cmd("y")]);
-        let d = snip("d", vec![SnippetStep::RunSnippet { id: leaf.id }, SnippetStep::RunSnippet { id: leaf.id }]);
+        let d = snip(
+            "d",
+            vec![
+                SnippetStep::RunSnippet { id: leaf.id },
+                SnippetStep::RunSnippet { id: leaf.id },
+            ],
+        );
         let all = vec![leaf, d.clone(), c];
         assert_eq!(flatten(&all, &d).unwrap(), vec![cmd("y"), cmd("y")]);
     }
 
     #[test]
     fn a_missing_snippet_stops_the_plan() {
-        let a = snip("a", vec![cmd("x"), SnippetStep::RunSnippet { id: Uuid::new_v4() }]);
-        assert_eq!(flatten(std::slice::from_ref(&a), &a), Err(PlanError::Missing));
+        let a = snip(
+            "a",
+            vec![cmd("x"), SnippetStep::RunSnippet { id: Uuid::new_v4() }],
+        );
+        assert_eq!(
+            flatten(std::slice::from_ref(&a), &a),
+            Err(PlanError::Missing)
+        );
     }
 
     #[test]
     fn only_pane_actions_may_run() {
-        assert_eq!(step_action("terminal_clear_scrollback"), Some(HotkeyAction::TerminalClearScrollback));
+        assert_eq!(
+            step_action("terminal_clear_scrollback"),
+            Some(SnippetAction::ClearScrollback)
+        );
+        assert_eq!(
+            step_action("terminal_paste_and_run"),
+            Some(SnippetAction::PasteAndRun)
+        );
         assert_eq!(step_action("lock_vault"), None);
         assert_eq!(step_action("close_all_tabs"), None);
         assert_eq!(step_action("from_a_newer_build"), None);
-        assert_eq!(allowed_step_actions().len(), 4);
+        assert_eq!(allowed_step_actions().len(), 5);
     }
 
     #[test]
@@ -362,28 +480,55 @@ mod tests {
         let steps = vec![cmd("deploy {env:prod}"), cmd("tail {env} {lines:100}")];
         assert_eq!(
             plan_placeholders(&steps),
-            vec![("env".into(), "prod".into()), ("lines".into(), "100".into())]
+            vec![
+                ("env".into(), "prod".into()),
+                ("lines".into(), "100".into())
+            ]
         );
-        let filled = substitute(steps, &[("env".into(), "qa".into()), ("lines".into(), "5".into())]);
+        let filled = substitute(
+            steps,
+            &[("env".into(), "qa".into()), ("lines".into(), "5".into())],
+        );
         assert_eq!(filled, vec![cmd("deploy qa"), cmd("tail qa 5")]);
     }
 
     #[test]
     fn a_save_name_never_leaves_the_folder() {
-        assert_eq!(save_file_name("{host}-{date}.log", "db-01", "2026-10-14").as_deref(), Some("db-01-2026-10-14.log"));
-        assert_eq!(save_file_name("../../.bashrc", "h", "d").as_deref(), Some("_._.._.bashrc"));
-        assert_eq!(save_file_name("/etc/passwd", "h", "d").as_deref(), Some("_etc_passwd"));
-        assert_eq!(save_file_name("C:\\Windows\\x.txt", "h", "d").as_deref(), Some("C__Windows_x.txt"));
+        assert_eq!(
+            save_file_name("{host}-{date}.log", "db-01", "2026-10-14").as_deref(),
+            Some("db-01-2026-10-14.log")
+        );
+        assert_eq!(
+            save_file_name("../../.bashrc", "h", "d").as_deref(),
+            Some("_._.._.bashrc")
+        );
+        assert_eq!(
+            save_file_name("/etc/passwd", "h", "d").as_deref(),
+            Some("_etc_passwd")
+        );
+        assert_eq!(
+            save_file_name("C:\\Windows\\x.txt", "h", "d").as_deref(),
+            Some("C__Windows_x.txt")
+        );
         assert_eq!(save_file_name("-rf", "h", "d").as_deref(), Some("_rf"));
         assert_eq!(save_file_name("..", "h", "d"), None);
-        assert_eq!(save_file_name("nul.txt", "h", "d").as_deref(), Some("_nul.txt"));
+        assert_eq!(
+            save_file_name("nul.txt", "h", "d").as_deref(),
+            Some("_nul.txt")
+        );
         assert_eq!(save_file_name("COM1", "h", "d").as_deref(), Some("_COM1"));
-        assert_eq!(save_file_name("com¹.txt", "h", "d").as_deref(), Some("_com¹.txt"));
+        assert_eq!(
+            save_file_name("com¹.txt", "h", "d").as_deref(),
+            Some("_com¹.txt")
+        );
         assert_eq!(save_file_name("LPT³", "h", "d").as_deref(), Some("_LPT³"));
         assert_eq!(save_file_name("COM10", "h", "d").as_deref(), Some("COM10"));
         let cjk = save_file_name(&"日".repeat(200), "h", "d").unwrap();
         assert!(cjk.len() <= 240 && cjk.chars().all(|c| c == '日'));
-        assert_eq!(save_file_name("console.log", "h", "d").as_deref(), Some("console.log"));
+        assert_eq!(
+            save_file_name("console.log", "h", "d").as_deref(),
+            Some("console.log")
+        );
         assert_eq!(save_file_name("out. . ", "h", "d").as_deref(), Some("out"));
         assert_eq!(save_file_name("   ", "h", "d"), None);
     }
