@@ -193,7 +193,7 @@ impl Oryxis {
         } else {
             1.0
         };
-        container(composed)
+        let framed = container(composed)
             .width(Length::Fill)
             .height(Length::Fill)
             .padding(Padding::from(border_width))
@@ -205,7 +205,10 @@ impl Oryxis {
                     width: border_width,
                 },
                 ..Default::default()
-            })
-            .boxed()
+            });
+        // The terminal's claim on the OS input method wraps EVERYTHING the
+        // window shows, so it is made after every field in the view had
+        // the chance to claim it for itself (`ime_host`).
+        crate::widgets::ime_host(framed.boxed(), self.terminal_ime_target())
     }
 }

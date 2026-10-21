@@ -217,7 +217,7 @@ fn is_haswell_igpu(vendor: u32, device: u32) -> bool {
 /// async only for wasm parity and resolves immediately on native
 /// backends, but poll it properly (park + wake) instead of assuming
 /// readiness, so a future wgpu that really suspends still works.
-fn block_on<F: Future>(future: F) -> F::Output {
+pub(crate) fn block_on<F: Future>(future: F) -> F::Output {
     struct ThreadWaker(std::thread::Thread);
     impl Wake for ThreadWaker {
         fn wake(self: Arc<Self>) {

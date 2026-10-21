@@ -299,37 +299,33 @@ impl Oryxis {
         if let Some(zm) = self.transfer_overlay() {
             stack = stack.push(zm);
         }
-        let terminal_view = stack.boxed();
+        stack.boxed()
+    }
 
-        // Wrap the full terminal view with the fallback IME provider.
-        // During traversal, any focused text input (sidebar search, find bar,
-        // AI chat input) updates first and claims IME. If no inner widget
-        // requests IME, `ime_host` falls back to anchoring the OS candidate
-        // window at the active terminal pane's caret.
-        if let Some(tab_idx) = self.cur_active_tab()
-            && let Some(tab) = self.tabs.get(tab_idx)
+    /// The pane the window's OS input method falls back to: the active
+    /// tab's focused pane, while this window draws it as a terminal (not
+    /// its connect card, not its Files mode) on an unlocked vault. Read by
+    /// the window root's `ime_host`, which asks for the method only when
+    /// no field of the view asked first.
+    pub(crate) fn terminal_ime_target(&self) -> Option<crate::widgets::ImeTarget> {
+        if !matches!(self.vaults.cur().vault_ui.state, crate::state::VaultState::Unlocked)
+            || self.start_picker_here()
+            || !self.terminal_surface_visible()
         {
-            let active_pane = tab.active();
-            // The drawer as DRAWN, never the `host_panel` flag: the flag
-            // stays up behind a tab focused after the editor opened
-            // (issue #262), and gating on it silently disabled the IME for
-            // every later tab. A terminal surface always has an active tab,
-            // so this predicate is false here by construction.
-            let enabled = !self.any_modal_blocks_input()
-                && !self.host_editor_visible();
-
-            crate::widgets::ime_host(
-                terminal_view,
-                enabled,
-                Some(active_pane.bounds.clone()),
-                Arc::clone(&active_pane.terminal),
-                self.terminal_font_px(),
-                self.vaults.cur().terminal_font_name.clone(),
-                self.vaults.cur().terminal_font_weight.font_weight(),
-            )
-        } else {
-            terminal_view
+            return None;
         }
+        let tab = self.cur_active_tab().and_then(|idx| self.tabs.get(idx))?;
+        if tab.files_mode && self.cur_hybrid_owner() == Some(tab._id) {
+            return None;
+        }
+        let pane = tab.active();
+        Some(crate::widgets::ImeTarget {
+            bounds: pane.bounds.clone(),
+            terminal: Arc::clone(&pane.terminal),
+            font_size: self.terminal_font_px(),
+            font_name: self.vaults.cur().terminal_font_name.clone(),
+            font_weight: self.vaults.cur().terminal_font_weight.font_weight(),
+        })
     }
 
     /// Bottom-center transfer card over the terminal while the active
@@ -777,10 +773,9 @@ impl Oryxis {
         if self.vaults.cur().prefs.hint_mode.should_show(pane.link_hint_shown) {
             term_view = term_view.on_link_click_hint(|| Message::Terminal(TerminalMessage::TerminalLinkClickHint));
         }
-        // The IME is requested one level up: `view_terminal` wraps the whole
-        // tab in a single `ime_host`, so the caret anchor is the active
-        // pane's cell and a focused sidebar / find-bar field can claim the
-        // input method first. Here we only report this pane's rect.
+        // The OS input method is asked for at the window root
+        // (`terminal_ime_target`), after every field of the view had its
+        // chance; the canvas only reports its rect for the caret anchor.
         let term_canvas = canvas(term_view)
             .width(Length::Fill)
             .height(Length::Fill);
@@ -807,8 +802,8 @@ impl Oryxis {
         // Report this pane's drawn rect so the OS-drop router can find
         // the pane under the cursor (a split tab can host different
         // hosts, so "the focused pane" is not always the drop target),
-        // and so the tab-level `ime_host` fallback provider can locate
-        // the active pane's canvas caret.
+        // and so the window root's `ime_host` can anchor the candidate
+        // window at the focused pane's caret.
         let host = crate::widgets::bounds_reporter(term_canvas, pane.bounds.clone());
         // Top-right overlays over the live canvas. The find-bar (C1) takes
         // the corner while open; otherwise a broadcast chip (C2) sits there

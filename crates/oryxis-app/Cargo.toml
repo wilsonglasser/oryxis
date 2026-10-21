@@ -279,6 +279,10 @@ tauri-winrt-notification = "0.8"
 tray-icon = { version = "0.26", default-features = false, features = ["muda-common-controls-v6"] }
 
 [dev-dependencies]
+# Drive a `UserInterface` by hand in the IME root tests
+# (`widgets/ime_host_tests.rs`): the input method a frame settles on is
+# only visible there. Same fork and branch as `iced`, one package.
+iced_runtime = { git = "https://github.com/wilsonglasser/iced", branch = "oryxis" }
 # russh AgentClient drives the agent_server protocol tests (proves
 # our wire encoding against a real client).
 russh = { workspace = true }

@@ -28,6 +28,8 @@ mod notice;
 mod overlay;
 mod privacy;
 mod theme_scope;
+#[cfg(test)]
+mod ime_host_tests;
 mod toolbar;
 
 pub(crate) use buttons::*;

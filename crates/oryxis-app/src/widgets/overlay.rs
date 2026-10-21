@@ -100,7 +100,6 @@ pub(crate) fn bounds_reporter<'a, Message: 'a>(
             shell: &mut Shell<'_, Message>,
             viewport: &Rectangle,
         ) {
-            self.cell.set(layout.bounds());
             self.content.update(
                 tree, event, layout, cursor, renderer, shell, viewport,
             );
@@ -537,38 +536,48 @@ pub(crate) fn scroll_into_view_task(
     .discard()
 }
 
-/// Wraps a whole terminal tab and, while `enabled` is true, asks the runtime
-/// to turn the OS IME on for this surface. The terminal is an `iced` canvas,
-/// not a `text_input`, so nothing in its widget tree ever requests an input
-/// method, and winit defaults `set_ime_allowed(false)`, which locks the IME to
-/// direct (English) mode and blocks CJK composition. This decorator closes
-/// that gap: every other behaviour delegates straight to the inner widget, so
-/// it is transparent apart from the IME request.
+/// The terminal pane the OS input method falls back to: its drawn rect
+/// (`bounds_reporter`, filled by the pane's last draw), its emulator (for
+/// the caret cell) and the font the grid is drawn in.
+pub(crate) struct ImeTarget {
+    pub(crate) bounds: BoundsCell,
+    pub(crate) terminal: std::sync::Arc<std::sync::Mutex<oryxis_terminal::TerminalState>>,
+    pub(crate) font_size: f32,
+    pub(crate) font_name: String,
+    pub(crate) font_weight: iced::font::Weight,
+}
+
+/// Wraps a window's whole view and, while `target` is a terminal pane, asks
+/// the runtime to turn the OS IME on for it. The terminal is an `iced`
+/// canvas, not a `text_input`, so nothing in its widget tree ever requests an
+/// input method, and winit defaults `set_ime_allowed(false)`, which locks the
+/// IME to direct (English) mode and blocks CJK composition. Every other
+/// behaviour delegates straight to the inner widget, and the wrapper is
+/// always there (`None` = no request), so the window's tree has one shape.
+///
+/// The terminal is the FALLBACK: a focused field (the find bar, a sidebar
+/// search, the chat input, a modal's input) requests its own input method
+/// while the tree is traversed, the shell keeps the first request it sees,
+/// and this wrapper asks only after the whole view did and only when nothing
+/// has. That is why it sits at the window root and not around the canvas:
+/// wrapped around the pane, the terminal asked before every field laid out
+/// after it (the find bar over the pane, a sidebar on the right, the
+/// session-group panel) and the candidate window stayed on the grid. Fields in an overlay need nothing: the runtime updates the
+/// overlays first and their request wins the merge.
 ///
 /// The request is only honoured by the shell during a `RedrawRequested`
-/// frame, so we issue it there, and only when no child asked first: a focused
-/// sidebar search box, find-bar field or chat input requests its own IME while
-/// the tree is traversed, and the shell keeps the first request it sees. When
-/// nothing claimed it, the terminal is the fallback provider. The committed
-/// text itself arrives as `Event::InputMethod(Commit(..))` and is routed to the
-/// PTY in `subscription.rs` / `dispatch_terminal.rs`, not here.
-///
-/// `bounds` is the active pane's reported canvas rect (see
-/// `bounds_reporter`); a zero-sized cell means the pane has not been drawn
-/// yet, in which case the whole wrapped area is used. The candidate box is
-/// anchored at the live caret inside that rect, and the composed preedit is
-/// drawn INLINE on the grid by the terminal widget itself (terminal font, at
-/// the caret), so we deliberately report `preedit: None`: the runtime's
+/// frame, so it is issued there. The committed text arrives as
+/// `Event::InputMethod(Commit(..))` and is routed to the PTY in
+/// `subscription.rs` / `dispatch_terminal`, not here. The candidate box is
+/// anchored at the live caret inside the pane's rect (the whole view while
+/// the pane has not been drawn yet), and the composed preedit is drawn
+/// INLINE on the grid by the terminal widget itself (terminal font, at the
+/// caret), so the request carries `preedit: None`: the runtime's
 /// over-the-spot overlay would otherwise double-paint the composition in a
 /// second font.
 pub(crate) fn ime_host<'a, Message: 'a>(
     content: impl Into<Element<'a, Message>>,
-    enabled: bool,
-    bounds: Option<BoundsCell>,
-    terminal: std::sync::Arc<std::sync::Mutex<oryxis_terminal::TerminalState>>,
-    font_size: f32,
-    font_name: String,
-    font_weight: iced::font::Weight,
+    target: Option<ImeTarget>,
 ) -> Element<'a, Message> {
     use iced::advanced::widget::{tree, Operation, Tree, Widget};
     use iced::advanced::{input_method, layout, mouse, overlay, renderer, Layout, Shell};
@@ -576,12 +585,7 @@ pub(crate) fn ime_host<'a, Message: 'a>(
 
     struct ImeHost<'a, Message> {
         content: Element<'a, Message>,
-        enabled: bool,
-        bounds: Option<BoundsCell>,
-        terminal: std::sync::Arc<std::sync::Mutex<oryxis_terminal::TerminalState>>,
-        font_size: f32,
-        font_name: String,
-        font_weight: iced::font::Weight,
+        target: Option<ImeTarget>,
     }
 
     impl<Message> iced::advanced::widget::Meta for ImeHost<'_, Message> {}
@@ -644,55 +648,48 @@ pub(crate) fn ime_host<'a, Message: 'a>(
             self.content
                 .update(tree, event, layout, cursor, renderer, shell, viewport);
 
+            let Some(target) = &self.target else {
+                return;
+            };
             // The shell only honours an input-method request issued during a
-            // redraw frame; only the focused pane requests it. If a child widget
-            // (such as a sidebar search box or find-bar text_input) has already
-            // requested an enabled input method during traversal, yield to it.
-            if self.enabled
-                && matches!(
-                    event,
-                    Event::Window(iced::window::Event::RedrawRequested(_))
-                )
-                && !shell.input_method().is_enabled()
+            // redraw frame, and a field the view just traversed may have
+            // asked already: it keeps the method.
+            if !matches!(event, Event::Window(iced::window::Event::RedrawRequested(_)))
+                || shell.input_method().is_enabled()
             {
-                let b = self
-                    .bounds
-                    .as_ref()
-                    .map(|c| c.get())
-                    .filter(|r| r.width > 0.0)
-                    .unwrap_or_else(|| layout.bounds());
-                // Anchor the OS candidate window at the terminal caret.
-                // try_lock so a frame that races the render thread just
-                // falls back to the bottom-left instead of blocking the UI.
-                // The composed preedit is drawn inline by the terminal
-                // widget itself, so `preedit` stays `None` here (no
-                // over-the-spot overlay, no double paint).
-                let cursor_area = match self.terminal.try_lock() {
-                    Ok(state) => oryxis_terminal::ime_caret_rect(
-                        b,
-                        self.font_size,
-                        Some(self.font_name.as_str()),
-                        self.font_weight,
-                        state.cursor_cell(),
-                    ),
-                    Err(_) => {
-                        let h = 18.0_f32.min(b.height);
-                        Rectangle::new(
-                            Point::new(b.x + 8.0, b.y + (b.height - h).max(0.0)),
-                            Size::new(2.0, h),
-                        )
-                    }
-                };
-                let ime: input_method::InputMethod = input_method::InputMethod::Enabled {
-                    cursor: cursor_area,
-                    // A terminal surface: lets Wayland shape the OSK for a
-                    // PTY (extra keys, layout hints) instead of the generic
-                    // text-field form.
-                    purpose: input_method::Purpose::Terminal,
-                    preedit: None,
-                };
-                shell.request_input_method(&ime);
+                return;
             }
+            let b = Some(target.bounds.get())
+                .filter(|r| r.width > 0.0 && r.height > 0.0)
+                .unwrap_or_else(|| layout.bounds());
+            // Anchor the OS candidate window at the terminal caret.
+            // try_lock so a frame that races the render thread just
+            // falls back to the bottom-left instead of blocking the UI.
+            let cursor_area = match target.terminal.try_lock() {
+                Ok(state) => oryxis_terminal::ime_caret_rect(
+                    b,
+                    target.font_size,
+                    Some(target.font_name.as_str()),
+                    target.font_weight,
+                    state.cursor_cell(),
+                ),
+                Err(_) => {
+                    let h = 18.0_f32.min(b.height);
+                    Rectangle::new(
+                        Point::new(b.x + 8.0, b.y + (b.height - h).max(0.0)),
+                        Size::new(2.0, h),
+                    )
+                }
+            };
+            let ime: input_method::InputMethod = input_method::InputMethod::Enabled {
+                cursor: cursor_area,
+                // A terminal surface: lets Wayland shape the OSK for a
+                // PTY (extra keys, layout hints) instead of the generic
+                // text-field form.
+                purpose: input_method::Purpose::Terminal,
+                preedit: None,
+            };
+            shell.request_input_method(&ime);
         }
         fn mouse_interaction(
             &self,
@@ -721,12 +718,7 @@ pub(crate) fn ime_host<'a, Message: 'a>(
 
     ImeHost {
         content: content.into(),
-        enabled,
-        bounds,
-        terminal,
-        font_size,
-        font_name,
-        font_weight,
+        target,
     }.boxed()
 }
 

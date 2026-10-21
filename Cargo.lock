@@ -5339,6 +5339,7 @@ dependencies = [
  "hickory-resolver",
  "iced",
  "iced_fonts",
+ "iced_runtime",
  "iced_test",
  "idna",
  "image",
