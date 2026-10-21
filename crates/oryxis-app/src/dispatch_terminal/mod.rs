@@ -1160,9 +1160,10 @@ impl Oryxis {
                 {
                     let bytes = text.into_bytes();
                     self.write_input_to_tab(tab_idx, &bytes);
-                    // The commit ends any active composition; winit usually
-                    // sends an empty Preedit first, but clear defensively so
-                    // a stale preedit can never linger on the overlay.
+                    // The commit ends any active composition, and winit no
+                    // longer sends an empty Preedit before it (the commit
+                    // itself clears it), so clearing here is what keeps a
+                    // stale preedit off the grid.
                     self.clear_focused_pane_preedit();
                     if trace_ime {
                         tracing::debug!(len = commit_len, tab = tab_idx, "ime-commit written to PTY");
