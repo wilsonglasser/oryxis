@@ -100,6 +100,7 @@ pub(crate) fn bounds_reporter<'a, Message: 'a>(
             shell: &mut Shell<'_, Message>,
             viewport: &Rectangle,
         ) {
+            self.cell.set(layout.bounds());
             self.content.update(
                 tree, event, layout, cursor, renderer, shell, viewport,
             );
@@ -536,28 +537,34 @@ pub(crate) fn scroll_into_view_task(
     .discard()
 }
 
-/// Wraps `content` (a terminal pane canvas) and, while `enabled` is true,
-/// asks the runtime to turn the OS IME on for this surface. The terminal is
-/// an `iced` canvas, not a `text_input`, so nothing in its widget tree ever
-/// requests an input method, and winit defaults `set_ime_allowed(false)`,
-/// which locks the IME to direct (English) mode and blocks CJK composition.
-/// This decorator closes that gap: every other behaviour delegates straight
-/// to the inner widget, so it is transparent apart from the IME request.
+/// Wraps a whole terminal tab and, while `enabled` is true, asks the runtime
+/// to turn the OS IME on for this surface. The terminal is an `iced` canvas,
+/// not a `text_input`, so nothing in its widget tree ever requests an input
+/// method, and winit defaults `set_ime_allowed(false)`, which locks the IME to
+/// direct (English) mode and blocks CJK composition. This decorator closes
+/// that gap: every other behaviour delegates straight to the inner widget, so
+/// it is transparent apart from the IME request.
 ///
 /// The request is only honoured by the shell during a `RedrawRequested`
-/// frame, so we issue it there. Only the focused pane (`enabled`) drives the
-/// IME, so split panes don't fight over the cursor area. The committed text
-/// itself arrives as `Event::InputMethod(Commit(..))` and is routed to the
+/// frame, so we issue it there, and only when no child asked first: a focused
+/// sidebar search box, find-bar field or chat input requests its own IME while
+/// the tree is traversed, and the shell keeps the first request it sees. When
+/// nothing claimed it, the terminal is the fallback provider. The committed
+/// text itself arrives as `Event::InputMethod(Commit(..))` and is routed to the
 /// PTY in `subscription.rs` / `dispatch_terminal.rs`, not here.
 ///
-/// The candidate box is anchored at the live caret (the pane's drawn cell)
-/// and the composed preedit is drawn INLINE on the grid by the terminal
-/// widget itself (terminal font, at the caret), so we deliberately report
-/// `preedit: None`: the runtime's over-the-spot overlay would otherwise
-/// double-paint the composition in a second font.
+/// `bounds` is the active pane's reported canvas rect (see
+/// `bounds_reporter`); a zero-sized cell means the pane has not been drawn
+/// yet, in which case the whole wrapped area is used. The candidate box is
+/// anchored at the live caret inside that rect, and the composed preedit is
+/// drawn INLINE on the grid by the terminal widget itself (terminal font, at
+/// the caret), so we deliberately report `preedit: None`: the runtime's
+/// over-the-spot overlay would otherwise double-paint the composition in a
+/// second font.
 pub(crate) fn ime_host<'a, Message: 'a>(
     content: impl Into<Element<'a, Message>>,
     enabled: bool,
+    bounds: Option<BoundsCell>,
     terminal: std::sync::Arc<std::sync::Mutex<oryxis_terminal::TerminalState>>,
     font_size: f32,
     font_name: String,
@@ -570,6 +577,7 @@ pub(crate) fn ime_host<'a, Message: 'a>(
     struct ImeHost<'a, Message> {
         content: Element<'a, Message>,
         enabled: bool,
+        bounds: Option<BoundsCell>,
         terminal: std::sync::Arc<std::sync::Mutex<oryxis_terminal::TerminalState>>,
         font_size: f32,
         font_name: String,
@@ -637,14 +645,22 @@ pub(crate) fn ime_host<'a, Message: 'a>(
                 .update(tree, event, layout, cursor, renderer, shell, viewport);
 
             // The shell only honours an input-method request issued during a
-            // redraw frame; only the focused pane requests it.
+            // redraw frame; only the focused pane requests it. If a child widget
+            // (such as a sidebar search box or find-bar text_input) has already
+            // requested an enabled input method during traversal, yield to it.
             if self.enabled
                 && matches!(
                     event,
                     Event::Window(iced::window::Event::RedrawRequested(_))
                 )
+                && !shell.input_method().is_enabled()
             {
-                let b = layout.bounds();
+                let b = self
+                    .bounds
+                    .as_ref()
+                    .map(|c| c.get())
+                    .filter(|r| r.width > 0.0)
+                    .unwrap_or_else(|| layout.bounds());
                 // Anchor the OS candidate window at the terminal caret.
                 // try_lock so a frame that races the render thread just
                 // falls back to the bottom-left instead of blocking the UI.
@@ -706,6 +722,7 @@ pub(crate) fn ime_host<'a, Message: 'a>(
     ImeHost {
         content: content.into(),
         enabled,
+        bounds,
         terminal,
         font_size,
         font_name,

@@ -82,6 +82,51 @@ impl<Message> Widget<Message, Theme, iced::Renderer> for ThemeScope<'_, Message>
         viewport: &Rectangle,
     ) {
         self.content.update(tree, event, layout, cursor, renderer, shell, viewport);
+
+        // When an IME text commit occurs (e.g. CJK candidate selection on macOS),
+        // AppKit calls `insertText:` which emits `Ime::Commit` but does NOT emit
+        // a subsequent empty `Ime::Preedit` to clear the marked text session.
+        // In iced's `editor::State`, `Event::InputMethod(Commit)` pastes the text into
+        // the buffer but leaves `self.preedit` uncleared. Consequently, the previous
+        // preedit syllables (e.g. "as da s d") linger as an overlay on the text input.
+        // Emitting a synthetic empty preedit immediately after commit clears
+        // `editor::State.preedit` and drops the ghost overlay.
+        //
+        // Only when a field actually took the commit: a commit that fell
+        // through to a terminal canvas (and is on its way to the PTY) has no
+        // preedit overlay to clear, and re-running the tree for it would
+        // rewrite event status and force a second redraw. This wrapper is the
+        // window root, so it sees every such commit exactly once.
+        if shell.is_event_captured()
+            && matches!(
+                event,
+                Event::InputMethod(iced::advanced::input_method::Event::Commit(_))
+            )
+        {
+            let clear_preedit = Event::InputMethod(iced::advanced::input_method::Event::Preedit(
+                String::new(),
+                None,
+            ));
+            // A local shell starts with `event_status: Status::Ignored`.
+            // Because the outer `shell` was captured during the commit event,
+            // passing `shell` directly causes containers (such as `Stack`,
+            // `Scrollable`, and `MouseArea`) to early-return before reaching
+            // the focused `text_input`. Dispatching with a local uncaptured
+            // shell allows the synthetic empty preedit to traverse to the
+            // input field, reset `editor::State.preedit`, and request redraw.
+            let mut bus = iced::advanced::shell::Bus::new();
+            let mut local_shell = shell.local(&mut bus);
+            self.content.update(
+                tree,
+                &clear_preedit,
+                layout,
+                cursor,
+                renderer,
+                &mut local_shell,
+                viewport,
+            );
+            shell.merge(local_shell, std::convert::identity);
+        }
     }
     fn mouse_interaction(
         &self,
@@ -150,6 +195,27 @@ impl<Message> overlay::Overlay<Message, Theme, iced::Renderer> for ScopedOverlay
         shell: &mut Shell<'_, Message>,
     ) {
         self.inner.as_overlay_mut().update(event, cursor, renderer, shell);
+
+        // Same ghost-preedit recovery as `ThemeScope::update`, for fields that
+        // live in an overlay (dialogs, dropdowns, menus) rather than the base
+        // tree.
+        if shell.is_event_captured()
+            && matches!(
+                event,
+                Event::InputMethod(iced::advanced::input_method::Event::Commit(_))
+            )
+        {
+            let clear_preedit = Event::InputMethod(iced::advanced::input_method::Event::Preedit(
+                String::new(),
+                None,
+            ));
+            let mut bus = iced::advanced::shell::Bus::new();
+            let mut local_shell = shell.local(&mut bus);
+            self.inner
+                .as_overlay_mut()
+                .update(&clear_preedit, cursor, renderer, &mut local_shell);
+            shell.merge(local_shell, std::convert::identity);
+        }
     }
     fn mouse_interaction(&self, cursor: mouse::Cursor, renderer: &iced::Renderer) -> mouse::Interaction {
         self.inner.as_overlay().mouse_interaction(cursor, renderer)
