@@ -69,7 +69,7 @@ Windows バイナリは Authenticode 署名済みです。ポータブル `.zip`
 コンピューターに Oryxis のプロファイルが既にある場合を除き、すべて
 （設定、ボールト、プラグイン、ログ）を `oryxis.exe` の隣に作成する
 `data` フォルダーに保存します。Linux と macOS では、同じ目的でバイナリ、
-`.AppImage` ファイル、または `Oryxis.app` の隣に `data` フォルダーを
+`.AppImage` ファイル、または `Oryxis.app` の隣に `oryxis-data` フォルダーを
 作成してください。
 
 ### フォントとエンコーディング

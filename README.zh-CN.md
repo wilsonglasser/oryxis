@@ -66,7 +66,7 @@ macOS（Apple Silicon `.dmg`）和 Windows（系统级与用户级安装器、�
 便携版 `.zip` 会把全部内容（设置、保险库、插件、日志）保存在它于
 `oryxis.exe` 旁创建的 `data` 文件夹中，除非这台电脑已有 Oryxis 配置文件；
 Linux 与 macOS 上，在二进制文件、`.AppImage` 文件或 `Oryxis.app` 旁创建
-`data` 文件夹即可。
+`oryxis-data` 文件夹即可。
 
 ### 中国大陆网络说明
 

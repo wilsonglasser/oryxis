@@ -67,7 +67,7 @@ macOS（Apple Silicon `.dmg`）和 Windows（系統層級與使用者層級安�
 簽章。可攜版 `.zip` 會把一切（設定、保險庫、外掛、記錄）放進它在
 `oryxis.exe` 旁建立的 `data` 資料夾，除非電腦上已有 Oryxis 設定檔；
 在 Linux 和 macOS 上，於執行檔、`.AppImage` 檔或 `Oryxis.app` 旁自行
-建立 `data` 資料夾即可。
+建立 `oryxis-data` 資料夾即可。
 
 ### 字型與編碼
 

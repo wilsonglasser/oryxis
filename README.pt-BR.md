@@ -70,7 +70,7 @@ sistema e por usuário, além do `.zip` portátil, x86_64 e ARM64). Os
 binários de Windows são assinados com Authenticode. O `.zip` portátil
 guarda tudo (configurações, cofres, plugins, logs) numa pasta `data`
 que ele cria ao lado do `oryxis.exe`, a menos que o computador já
-tenha um perfil do Oryxis; no Linux e no macOS, crie uma pasta `data`
+tenha um perfil do Oryxis; no Linux e no macOS, crie uma pasta `oryxis-data`
 ao lado do binário, do arquivo `.AppImage` ou do `Oryxis.app` para o
 mesmo efeito.
 

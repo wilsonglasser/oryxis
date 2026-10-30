@@ -69,7 +69,7 @@ macOS(Apple Silicon `.dmg`), Windows(시스템 / 사용자 단위 설치
 것(설정, 볼트, 플러그인, 로그)을 `oryxis.exe` 옆에 만드는 `data`
 폴더에 보관합니다. 단, 컴퓨터에 이미 Oryxis 프로필이 있으면 그것을
 계속 씁니다. Linux와 macOS에서는 바이너리, `.AppImage` 파일 또는
-`Oryxis.app` 옆에 `data` 폴더를 직접 만들면 같은 효과가 납니다.
+`Oryxis.app` 옆에 `oryxis-data` 폴더를 직접 만들면 같은 효과가 납니다.
 
 ### 글꼴과 인코딩
 

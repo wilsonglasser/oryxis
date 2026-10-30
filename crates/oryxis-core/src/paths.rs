@@ -11,11 +11,15 @@
 //!    lives under. It exists for the harness sandbox on Windows, where
 //!    `dirs::home_dir()` is `SHGetKnownFolderPath` (a WinAPI call that
 //!    ignores `$HOME` / `%USERPROFILE%`).
-//! 3. A `data` entry beside the program (portable mode, issue #271): the
+//! 3. A portable entry beside the program (portable mode, issue #271): the
 //!    whole tree lives there and travels with it. "Beside the program" is
 //!    the folder of the executable, of the `.AppImage` file, or of the
 //!    `Oryxis.app` bundle ([`anchor_for`]), never the home folder itself
-//!    (`~/data` is the user's own). ANY entry by that name
+//!    (`~/data` is the user's own). The entry is `data` on Windows, where
+//!    the zip's own folder holds it, and `oryxis-data` on Linux and macOS,
+//!    where the program usually sits in a SHARED folder (`~/Downloads`,
+//!    `~/Applications`, `/Applications`) that may hold anyone's `data`
+//!    ([`PortableNaming`]). ANY entry by that name
 //!    counts, a dangling junction or a file included: the user asked for
 //!    that folder, and a tree that cannot be used there is reported by
 //!    whatever fails to open in it, never swapped in silence for the
@@ -49,8 +53,46 @@ pub const WSL_DISTRO_ENV: &str = "ORYXIS_WSL_DISTRO";
 /// (source 2 above).
 pub const HOME_ENV: &str = "ORYXIS_HOME";
 
-/// The entry beside the executable that turns portable mode on.
+/// The entry beside the executable that turns portable mode on, on
+/// Windows (the one name the app creates).
 pub const PORTABLE_DIR_NAME: &str = "data";
+
+/// The entry that turns portable mode on beside a Linux binary, an
+/// `.AppImage` or `Oryxis.app`. Named after the product, the way a portable
+/// VS Code beside its bundle reads `code-portable-data`: the folder holding
+/// the program is often shared, and a `data` there may be anyone's.
+pub const PORTABLE_DIR_NAME_NAMED: &str = "oryxis-data";
+
+/// The file every data tree holds once Oryxis has run in it
+/// (`oryxis_vault::device`'s store), read here as the proof that a `data`
+/// folder beside a Linux or macOS program is an Oryxis tree.
+const DEVICE_FILE_NAME: &str = "device.json";
+
+/// Which entry beside the program is the portable tree.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PortableNaming {
+    /// Windows: `data`, the folder the zip's copy creates in its own
+    /// folder.
+    Generic,
+    /// Linux and macOS: `oryxis-data`; a `data` folder only when it
+    /// already holds an Oryxis tree (one 0.23.0 picked up by the generic
+    /// name).
+    Named,
+}
+
+impl PortableNaming {
+    fn host() -> Self {
+        if cfg!(windows) { Self::Generic } else { Self::Named }
+    }
+
+    /// The entry a start that makes the folder creates.
+    fn created_name(self) -> &'static str {
+        match self {
+            Self::Generic => PORTABLE_DIR_NAME,
+            Self::Named => PORTABLE_DIR_NAME_NAMED,
+        }
+    }
+}
 
 /// Where the data tree came from.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -175,7 +217,12 @@ pub fn settle_portable(create_by_default: bool) -> PortableStart {
         return PortableStart::Overridden;
     }
     let anchor = program_anchor();
-    let (decision, outcome) = decide_portable(anchor, create_by_default, dirs::home_dir().map(|h| h.join(".oryxis")));
+    let (decision, outcome) = decide_portable(
+        anchor,
+        create_by_default,
+        dirs::home_dir().map(|h| h.join(".oryxis")),
+        PortableNaming::host(),
+    );
     if PORTABLE.set(decision).is_err() {
         // Something read the tree before the start settled it: the
         // passive probe answered, and it stays (the tree never moves
@@ -193,13 +240,14 @@ fn decide_portable(
     anchor: Option<Anchor>,
     create_by_default: bool,
     profile_tree: Option<PathBuf>,
+    naming: PortableNaming,
 ) -> (Option<PathBuf>, PortableStart) {
     let dir = match anchor {
         Some(Anchor::Dir(dir)) => dir,
         Some(Anchor::Translocated) => return (None, PortableStart::Translocated),
         None => return (None, PortableStart::Off),
     };
-    if let Some(found) = existing_data_entry(&dir) {
+    if let Some(found) = portable_entry(&dir, naming) {
         return (Some(found.clone()), PortableStart::Found(found));
     }
     if !create_by_default {
@@ -211,20 +259,36 @@ fn decide_portable(
     if let Some(profile) = profile_tree.filter(|p| p.symlink_metadata().is_ok()) {
         return (None, PortableStart::ProfileKept(profile));
     }
-    let data = dir.join(PORTABLE_DIR_NAME);
+    let data = dir.join(naming.created_name());
     match std::fs::create_dir(&data) {
         Ok(()) => (Some(data.clone()), PortableStart::Created(data)),
         Err(e) => (None, PortableStart::CreateFailed { path: data, error: e.to_string() }),
     }
 }
 
-/// The `data` entry in `dir`, when there is one. `symlink_metadata`
-/// rather than `is_dir`: a junction to a volume that is not mounted (a
-/// VeraCrypt drive) is still the user's choice of tree, and following it
-/// would fall back to the profile in silence.
+/// The portable entry in `dir`, when there is one.
 fn existing_data_entry(dir: &Path) -> Option<PathBuf> {
-    let data = dir.join(PORTABLE_DIR_NAME);
-    data.symlink_metadata().is_ok().then_some(data)
+    portable_entry(dir, PortableNaming::host())
+}
+
+/// [`existing_data_entry`] for a given naming. The named entry is taken by
+/// `symlink_metadata` rather than `is_dir`: a junction to a volume that is
+/// not mounted (a VeraCrypt drive) is still the user's choice of tree, and
+/// following it would fall back to the profile in silence. A `data` folder
+/// under [`PortableNaming::Named`] has to show it is an Oryxis tree (the
+/// AppImage catalog's test downloads the image beside its own `data`).
+fn portable_entry(dir: &Path, naming: PortableNaming) -> Option<PathBuf> {
+    let any_entry = |name: &str| {
+        let entry = dir.join(name);
+        entry.symlink_metadata().is_ok().then_some(entry)
+    };
+    match naming {
+        PortableNaming::Generic => any_entry(PORTABLE_DIR_NAME),
+        PortableNaming::Named => any_entry(PORTABLE_DIR_NAME_NAMED).or_else(|| {
+            let data = dir.join(PORTABLE_DIR_NAME);
+            data.join(DEVICE_FILE_NAME).is_file().then_some(data)
+        }),
+    }
 }
 
 /// Whether a package manager owns `dir` and replaces it on update.
@@ -489,30 +553,61 @@ mod tests {
         );
     }
 
-    /// Portable mode is the `data` entry beside the program, in any
+    /// Portable mode is the named entry beside the program, in any
     /// form: a folder, a link whose target is gone (a VeraCrypt volume
     /// not mounted yet), even a file. Each of those is the user asking
     /// for that tree; what fails to open there reports itself, and the
     /// profile's tree is never used in its place.
     #[test]
     fn portable_folder_is_any_data_entry_beside_the_program() {
-        let root = tempdir("entry");
-        assert_eq!(existing_data_entry(&root), None);
-
-        std::fs::create_dir(root.join(PORTABLE_DIR_NAME)).unwrap();
-        assert_eq!(existing_data_entry(&root), Some(root.join(PORTABLE_DIR_NAME)));
-        std::fs::remove_dir(root.join(PORTABLE_DIR_NAME)).unwrap();
-
-        std::fs::write(root.join(PORTABLE_DIR_NAME), b"").unwrap();
-        assert_eq!(existing_data_entry(&root), Some(root.join(PORTABLE_DIR_NAME)));
-        std::fs::remove_file(root.join(PORTABLE_DIR_NAME)).unwrap();
-
-        #[cfg(unix)]
+        for (naming, name) in
+            [(PortableNaming::Generic, PORTABLE_DIR_NAME), (PortableNaming::Named, PORTABLE_DIR_NAME_NAMED)]
         {
-            std::os::unix::fs::symlink(root.join("unmounted"), root.join(PORTABLE_DIR_NAME)).unwrap();
-            assert_eq!(existing_data_entry(&root), Some(root.join(PORTABLE_DIR_NAME)));
+            let root = tempdir("entry");
+            assert_eq!(portable_entry(&root, naming), None);
+
+            std::fs::create_dir(root.join(name)).unwrap();
+            assert_eq!(portable_entry(&root, naming), Some(root.join(name)));
+            std::fs::remove_dir(root.join(name)).unwrap();
+
+            std::fs::write(root.join(name), b"").unwrap();
+            assert_eq!(portable_entry(&root, naming), Some(root.join(name)));
+            std::fs::remove_file(root.join(name)).unwrap();
+
+            #[cfg(unix)]
+            {
+                std::os::unix::fs::symlink(root.join("unmounted"), root.join(name)).unwrap();
+                assert_eq!(portable_entry(&root, naming), Some(root.join(name)));
+            }
+            let _ = std::fs::remove_dir_all(&root);
         }
+    }
+
+    /// Beside a Linux binary, an `.AppImage` or `Oryxis.app` the folder is
+    /// often shared: a `data` folder there is someone else's (the AppImage
+    /// catalog's test downloads the image next to its own `data/`) unless
+    /// it already holds an Oryxis tree, and `oryxis-data` wins over it.
+    #[test]
+    fn a_shared_folders_data_is_taken_only_when_it_is_an_oryxis_tree() {
+        let root = tempdir("named");
+        std::fs::create_dir(root.join(PORTABLE_DIR_NAME)).unwrap();
+        std::fs::write(root.join(PORTABLE_DIR_NAME).join("Oryxis"), b"https://example.org").unwrap();
+        assert_eq!(portable_entry(&root, PortableNaming::Named), None);
+        // Windows takes it: that folder is the zip's own.
+        assert_eq!(portable_entry(&root, PortableNaming::Generic), Some(root.join(PORTABLE_DIR_NAME)));
+
+        std::fs::write(root.join(PORTABLE_DIR_NAME).join(DEVICE_FILE_NAME), b"{}").unwrap();
+        assert_eq!(portable_entry(&root, PortableNaming::Named), Some(root.join(PORTABLE_DIR_NAME)));
+
+        std::fs::create_dir(root.join(PORTABLE_DIR_NAME_NAMED)).unwrap();
+        assert_eq!(portable_entry(&root, PortableNaming::Named), Some(root.join(PORTABLE_DIR_NAME_NAMED)));
         let _ = std::fs::remove_dir_all(&root);
+
+        // A start that makes the folder makes the name it would read back.
+        let fresh = tempdir("named-make");
+        let (made, _) = decide_portable(Some(Anchor::Dir(fresh.clone())), true, None, PortableNaming::Named);
+        assert_eq!(made, Some(fresh.join(PORTABLE_DIR_NAME_NAMED)));
+        let _ = std::fs::remove_dir_all(&fresh);
     }
 
     /// A program kept straight in the home folder never reads `~/data`
@@ -592,25 +687,25 @@ mod tests {
         let anchor = || Some(Anchor::Dir(app.clone()));
 
         // Opt-in platforms: nothing there, nothing made.
-        assert!(matches!(decide_portable(anchor(), false, Some(profile.clone())), (None, PortableStart::Off)));
+        assert!(matches!(decide_portable(anchor(), false, Some(profile.clone()), PortableNaming::Generic), (None, PortableStart::Off)));
         assert!(!app.join(PORTABLE_DIR_NAME).exists());
         // The profile holds a tree: kept, nothing made.
         std::fs::create_dir_all(&profile).unwrap();
-        assert!(matches!(decide_portable(anchor(), true, Some(profile.clone())), (None, PortableStart::ProfileKept(_))));
+        assert!(matches!(decide_portable(anchor(), true, Some(profile.clone()), PortableNaming::Generic), (None, PortableStart::ProfileKept(_))));
         assert!(!app.join(PORTABLE_DIR_NAME).exists());
         std::fs::remove_dir_all(&profile).unwrap();
         // A fresh copy: made.
-        let (made, outcome) = decide_portable(anchor(), true, Some(profile.clone()));
+        let (made, outcome) = decide_portable(anchor(), true, Some(profile.clone()), PortableNaming::Generic);
         assert_eq!(made, Some(app.join(PORTABLE_DIR_NAME)));
         assert!(matches!(outcome, PortableStart::Created(_)));
         // From then on it is found, whatever the profile holds and on
         // every platform.
         std::fs::create_dir_all(&profile).unwrap();
-        assert!(matches!(decide_portable(anchor(), false, Some(profile.clone())), (Some(_), PortableStart::Found(_))));
+        assert!(matches!(decide_portable(anchor(), false, Some(profile.clone()), PortableNaming::Generic), (Some(_), PortableStart::Found(_))));
         // A folder that cannot hold it: the profile, said so.
         let missing = || Some(Anchor::Dir(root.join("gone")));
-        assert!(matches!(decide_portable(missing(), true, None), (None, PortableStart::CreateFailed { .. })));
-        assert!(matches!(decide_portable(Some(Anchor::Translocated), true, None), (None, PortableStart::Translocated)));
+        assert!(matches!(decide_portable(missing(), true, None, PortableNaming::Generic), (None, PortableStart::CreateFailed { .. })));
+        assert!(matches!(decide_portable(Some(Anchor::Translocated), true, None, PortableNaming::Generic), (None, PortableStart::Translocated)));
         let _ = std::fs::remove_dir_all(&root);
     }
 
@@ -629,17 +724,17 @@ mod tests {
         std::fs::write(app.join("install.json"), b"{}").unwrap();
         let anchor = || Some(Anchor::Dir(app.clone()));
 
-        let (made, outcome) = decide_portable(anchor(), true, Some(profile.clone()));
+        let (made, outcome) = decide_portable(anchor(), true, Some(profile.clone()), PortableNaming::Generic);
         assert_eq!(made, None);
         assert!(matches!(outcome, PortableStart::PackageManaged(_)), "{outcome:?}");
         assert!(!app.join(PORTABLE_DIR_NAME).exists());
 
         // One of the two files alone is not Scoop's folder.
         std::fs::remove_file(app.join("install.json")).unwrap();
-        assert!(matches!(decide_portable(anchor(), true, Some(profile.clone())), (Some(_), PortableStart::Created(_))));
+        assert!(matches!(decide_portable(anchor(), true, Some(profile.clone()), PortableNaming::Generic), (Some(_), PortableStart::Created(_))));
         std::fs::write(app.join("install.json"), b"{}").unwrap();
         // The folder the user made (or the one just made) is found.
-        assert!(matches!(decide_portable(anchor(), true, Some(profile.clone())), (Some(_), PortableStart::Found(_))));
+        assert!(matches!(decide_portable(anchor(), true, Some(profile.clone()), PortableNaming::Generic), (Some(_), PortableStart::Found(_))));
         let _ = std::fs::remove_dir_all(&root);
     }
 
