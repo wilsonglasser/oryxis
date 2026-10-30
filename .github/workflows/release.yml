@@ -28,7 +28,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential pkg-config libssl-dev \
-            libgtk-3-dev libwayland-dev libxkbcommon-dev fuse libfuse2
+            libgtk-3-dev libwayland-dev libxkbcommon-dev libxkbcommon-x11-0 fuse libfuse2
       - uses: actions/cache@v5
         with:
           path: |
@@ -75,7 +75,19 @@ jobs:
           cp target/release/oryxis AppDir/usr/bin/
           cp resources/oryxis.desktop AppDir/usr/share/applications/
           cp resources/logo_256.png AppDir/usr/share/icons/hicolor/256x256/apps/oryxis.png
-          ./linuxdeploy --appdir AppDir --output appimage
+          # winit opens libxkbcommon(-x11) with dlopen, which linuxdeploy
+          # cannot see; without them the app panics at start on a system
+          # that lacks them (the AppImage catalog's test machine did).
+          LIBS=""
+          for lib in libxkbcommon.so.0 libxkbcommon-x11.so.0; do
+            path=$(ldconfig -p | awk -v l="$lib" '$1 == l { print $NF; exit }')
+            [ -n "$path" ] || { echo "::error::$lib is not installed"; exit 1; }
+            LIBS="$LIBS --library $path"
+          done
+          ./linuxdeploy --appdir AppDir $LIBS --output appimage
+          for lib in libxkbcommon.so.0 libxkbcommon-x11.so.0 libxcb-xkb.so.1; do
+            [ -e "AppDir/usr/lib/$lib" ] || { echo "::error::$lib is missing from the AppImage"; exit 1; }
+          done
           mv Oryxis-*.AppImage oryxis-linux-x86_64.AppImage 2>/dev/null \
             || mv oryxis-*.AppImage oryxis-linux-x86_64.AppImage 2>/dev/null \
             || mv *.AppImage oryxis-linux-x86_64.AppImage
@@ -98,7 +110,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential pkg-config libssl-dev \
-            libgtk-3-dev libwayland-dev libxkbcommon-dev fuse libfuse2
+            libgtk-3-dev libwayland-dev libxkbcommon-dev libxkbcommon-x11-0 fuse libfuse2
       - uses: actions/cache@v5
         with:
           path: |
@@ -128,7 +140,19 @@ jobs:
           cp target/release/oryxis AppDir/usr/bin/
           cp resources/oryxis.desktop AppDir/usr/share/applications/
           cp resources/logo_256.png AppDir/usr/share/icons/hicolor/256x256/apps/oryxis.png
-          ./linuxdeploy --appdir AppDir --output appimage
+          # winit opens libxkbcommon(-x11) with dlopen, which linuxdeploy
+          # cannot see; without them the app panics at start on a system
+          # that lacks them (the AppImage catalog's test machine did).
+          LIBS=""
+          for lib in libxkbcommon.so.0 libxkbcommon-x11.so.0; do
+            path=$(ldconfig -p | awk -v l="$lib" '$1 == l { print $NF; exit }')
+            [ -n "$path" ] || { echo "::error::$lib is not installed"; exit 1; }
+            LIBS="$LIBS --library $path"
+          done
+          ./linuxdeploy --appdir AppDir $LIBS --output appimage
+          for lib in libxkbcommon.so.0 libxkbcommon-x11.so.0 libxcb-xkb.so.1; do
+            [ -e "AppDir/usr/lib/$lib" ] || { echo "::error::$lib is missing from the AppImage"; exit 1; }
+          done
           mv Oryxis-*.AppImage oryxis-linux-aarch64.AppImage 2>/dev/null \
             || mv oryxis-*.AppImage oryxis-linux-aarch64.AppImage 2>/dev/null \
             || mv *.AppImage oryxis-linux-aarch64.AppImage
