@@ -456,12 +456,12 @@ impl Oryxis {
         if !self.input_here() {
             return None;
         }
-        let text_ = self.toast.as_ref()?;
-        let chip = container(
-            text(text_.clone()).size(11).color(OryxisColors::t().text_primary),
-        )
-        .padding(Padding { top: 5.0, right: 12.0, bottom: 5.0, left: 12.0 })
-        .style(|_| container::Style {
+        let toast = self.toast.as_ref()?;
+        // Clicking the text dismisses immediately. The optional action is
+        // its own click target, so it is NOT nested in that MouseArea (an
+        // outer one would swallow the click); only the surrounding Fill
+        // stays transparent so the terminal underneath keeps its input.
+        let chip_style = |_: &iced::Theme| container::Style {
             background: Some(Background::Color(Color {
                 a: 0.95,
                 ..OryxisColors::t().bg_selected
@@ -472,13 +472,29 @@ impl Oryxis {
                 width: 1.0,
             },
             ..Default::default()
-        });
-        // Clicking the chip dismisses it immediately. Only the chip is
-        // interactive; the surrounding Fill stays transparent to clicks so it
-        // never steals input from the terminal underneath.
-        let chip = MouseArea::new(chip)
-            .on_press(Message::ToastDismiss)
-            .interaction(iced::mouse::Interaction::Pointer);
+        };
+        let dismiss = || {
+            MouseArea::new(text(toast.text.clone()).size(11).color(OryxisColors::t().text_primary))
+                .on_press(Message::ToastDismiss)
+                .interaction(iced::mouse::Interaction::Pointer)
+                .boxed()
+        };
+        // `dir_row`, not `row!`: the action follows the text in reading
+        // order, so under RTL it belongs on the other side.
+        let line = match toast.action.as_ref() {
+            Some((label, action)) => dir_row(vec![
+                dismiss(),
+                MouseArea::new(text(label.clone()).size(11).color(OryxisColors::t().accent))
+                    .on_press(action.clone())
+                    .interaction(iced::mouse::Interaction::Pointer)
+                    .boxed(),
+            ])
+            .spacing(10),
+            None => dir_row(vec![dismiss()]),
+        };
+        let chip = container(line.align_y(iced::Alignment::Center))
+            .padding(Padding { top: 5.0, right: 12.0, bottom: 5.0, left: 12.0 })
+            .style(chip_style);
         Some(
             container(
                 column![

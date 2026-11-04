@@ -20,8 +20,12 @@
 //!   a same-named file already parked there would otherwise hand the
 //!   picked folder a " (1)" it has no collision to explain.
 //! - Answered after the whole transfer completed: the parked files
-//!   move, and the app says where they went, because the completion
-//!   toast has already fired with no location to name.
+//!   move, and the app says where they went.
+//! - A download that finished successfully reports once where its files
+//!   ended up ([`DeliveryEvent::Delivered`]): the folder it was written
+//!   into (a direct download), the one picked mid-transfer, or the one
+//!   picked after completion. A cancelled or failed transfer reports
+//!   nothing, so it cannot overwrite the "cancelled" feedback.
 //! - Declined while the transfer runs: the driver is asked to abort
 //!   (flag plus wake-up, the driver sends the CANCEL sequence itself,
 //!   never this module: after the driver has ended the divert is gone
@@ -173,8 +177,10 @@ pub(crate) enum DeliveryEvent {
     /// A driver event, forwarded; a `FileDone` carries the path the
     /// file ended up at, which is the moved one once a folder is known.
     Progress(Progress),
-    /// The folder was picked AFTER the transfer had completed, and the
-    /// parked files were just moved there.
+    /// A download that finished successfully ended with its files in
+    /// `dir`: a direct one, one whose folder was picked mid-transfer, or
+    /// one picked after completion. Sent once, so the app can say where
+    /// the files went and offer to reveal them.
     Delivered { dir: PathBuf, files: Vec<String> },
     /// One file could not be moved into the picked folder; it is still
     /// at `staying`.
@@ -223,6 +229,17 @@ pub(crate) async fn relay(
     // driver rather than derived from the name: a part another transfer
     // holds is never shared, so this one may carry a number.
     let mut in_flight_part: Option<PathBuf> = None;
+    // Files that ended in their FINAL folder, by delivered name. Reported
+    // once when the session ends, so the app can say where they went.
+    let mut saved: Vec<String> = Vec::new();
+    // The folder a DIRECT download wrote into: this relay is never told
+    // one up front, so it learns it from the driver's own `FileDone`
+    // paths.
+    let mut direct_dir: Option<PathBuf> = None;
+    // Whether the session ended `Completed`: a cancel or a failure must
+    // not report the files that happened to finish first, or its
+    // "cancelled" feedback would be replaced by a "saved to" chip.
+    let mut completed = false;
     let mut driver_done = false;
     loop {
         tokio::select! {
@@ -231,8 +248,13 @@ pub(crate) async fn relay(
                 match picked {
                     Some(dir) => {
                         let moved = place_parked(&mut parked, &dir, &events).await;
-                        if driver_done && !moved.is_empty() {
+                        if driver_done && completed && !moved.is_empty() {
                             let _ = events.send(DeliveryEvent::Delivered { dir: dir.clone(), files: moved });
+                        } else {
+                            // Picked mid-transfer: the rest complete below,
+                            // and the whole lot is named when the session
+                            // ends.
+                            saved.extend(moved);
                         }
                         destination = Some(Some(dir));
                     }
@@ -273,7 +295,11 @@ pub(crate) async fn relay(
                         let (name, path) = match &destination {
                             Some(Some(dir)) => {
                                 match place_file(&src, dir, &wanted).await {
-                                    Ok(moved) => (file_name(&moved), Some(moved)),
+                                    Ok(moved) => {
+                                        let delivered = file_name(&moved);
+                                        saved.push(delivered.clone());
+                                        (delivered, Some(moved))
+                                    }
                                     Err(err) => {
                                         let _ = events.send(DeliveryEvent::MoveFailed {
                                             name: wanted.clone(),
@@ -302,6 +328,20 @@ pub(crate) async fn relay(
                         let _ = events.send(DeliveryEvent::Declined { trailing });
                     }
                     Some(p) => {
+                        if matches!(&p, Progress::Completed { .. }) {
+                            completed = true;
+                        }
+                        // A direct download is written straight into the
+                        // folder the user configured; remember it and the
+                        // names so the app can name the folder at the end.
+                        if staging.is_none()
+                            && let Progress::FileDone { name, path: Some(path) } = &p
+                        {
+                            if let Some(dir) = path.parent() {
+                                direct_dir = Some(dir.to_path_buf());
+                            }
+                            saved.push(name.clone());
+                        }
                         let _ = events.send(DeliveryEvent::Progress(p));
                     }
                 }
@@ -319,6 +359,20 @@ pub(crate) async fn relay(
         if let Some(record) = resume_owner_path_for_part(part) {
             let _ = tokio::fs::remove_file(record).await;
         }
+    }
+    // Name the folder once, at the end of a session that finished. An
+    // answer that arrived after the driver ended already reported it
+    // above (`saved` is empty then, the files having been parked), and a
+    // declined transfer leaves `saved` empty too. Direct downloads and
+    // folders picked mid-transfer are named here; `completed` keeps a
+    // cancelled or failed run from reporting the files it saved first.
+    let dir = if staging.is_none() {
+        direct_dir
+    } else {
+        destination.flatten()
+    };
+    if completed && !saved.is_empty() && let Some(dir) = dir {
+        let _ = events.send(DeliveryEvent::Delivered { dir, files: saved });
     }
     drop(claim);
 }
@@ -680,6 +734,22 @@ mod tests {
             h.next().await,
             DeliveryEvent::Progress(Progress::Completed { .. })
         ));
+        // The driver is gone too (in production its progress channel
+        // closes right after `Completed`), which is what lets the relay
+        // close out and name the folder.
+        h.driver_ended().await;
+        // Named once at the end, with BOTH files: the one moved on the
+        // answer and the one that finished after it.
+        match h.next().await {
+            DeliveryEvent::Delivered { dir, files } => {
+                assert_eq!(dir, h.dest);
+                assert_eq!(
+                    files,
+                    vec!["first.bin".to_string(), "second.bin".to_string()]
+                );
+            }
+            other => panic!("expected Delivered, got {other:?}"),
+        }
         h.finish_relay().await;
     }
 
@@ -883,7 +953,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn direct_placement_forwards_everything_untouched() {
+    async fn direct_placement_forwards_events_and_reports_where_the_files_landed() {
         let root = scratch("direct");
         let (progress_tx, progress_rx) = mpsc::unbounded_channel();
         let (wire_tx, _wire_rx) = mpsc::unbounded_channel();
@@ -915,9 +985,55 @@ mod tests {
             events_rx.recv().await.unwrap(),
             DeliveryEvent::Progress(Progress::Completed { trailing }) if trailing == b"$ "
         ));
+        // The folder is the file's own parent: a direct download is never
+        // told one up front, and naming it is what lets the app say where
+        // the files went and offer to reveal it.
+        match events_rx.recv().await.unwrap() {
+            DeliveryEvent::Delivered { dir, files } => {
+                assert_eq!(dir, root);
+                assert_eq!(files, vec!["direct.bin".to_string()]);
+            }
+            other => panic!("expected Delivered, got {other:?}"),
+        }
         assert!(events_rx.recv().await.is_none());
         task.await.unwrap();
         assert!(path.exists());
+    }
+
+    #[tokio::test]
+    async fn a_cancelled_direct_download_reports_nothing_it_saved_first() {
+        let root = scratch("direct_abort");
+        let (progress_tx, progress_rx) = mpsc::unbounded_channel();
+        let (wire_tx, _wire_rx) = mpsc::unbounded_channel();
+        let (events_tx, mut events_rx) = mpsc::unbounded_channel();
+        let abort = Arc::new(AtomicBool::new(false));
+        let task = tokio::spawn(relay(
+            progress_rx,
+            Placement::Direct,
+            abort,
+            wire_tx,
+            events_tx,
+        ));
+        let path = root.join("half.bin");
+        std::fs::write(&path, b"h").unwrap();
+        progress_tx
+            .send(Progress::FileDone {
+                name: "half.bin".into(),
+                path: Some(path.clone()),
+            })
+            .unwrap();
+        progress_tx.send(Progress::Aborted).unwrap();
+        drop(progress_tx);
+        assert_eq!(done_path(events_rx.recv().await.unwrap()), path);
+        assert!(matches!(
+            events_rx.recv().await.unwrap(),
+            DeliveryEvent::Progress(Progress::Aborted)
+        ));
+        // The file finished before the cancel, but the transfer did not:
+        // the app's "cancelled" feedback stays the last word, not a
+        // "saved to" chip naming a run that never completed.
+        assert!(events_rx.recv().await.is_none());
+        task.await.unwrap();
     }
 
     fn age(path: &Path, by: Duration) {

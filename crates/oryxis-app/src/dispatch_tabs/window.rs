@@ -446,8 +446,8 @@ impl Oryxis {
             // seconds from the moment you return. Re-stamping the
             // deadline is enough: the tick that clears it is already
             // running, and only honours the deadline once focus is back.
-            if self.toast.is_some() {
-                self.toast_deadline = std::time::Instant::now()
+            if let Some(toast) = self.toast.as_mut() {
+                toast.deadline = std::time::Instant::now()
                     .checked_add(std::time::Duration::from_secs(4));
             }
         } else {

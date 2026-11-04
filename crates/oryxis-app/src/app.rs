@@ -306,6 +306,19 @@ pub(crate) fn terminal_font_serves_weight(family: &str, weight: u16) -> bool {
 // App state
 // ---------------------------------------------------------------------------
 
+/// The transient status chip at the bottom of the window: what it says,
+/// when it auto-dismisses, and the one clickable action it may carry.
+/// Kept as a single value so an action can never outlive the text it
+/// belonged to.
+pub(crate) struct Toast {
+    pub(crate) text: String,
+    /// When the chip dismisses itself.
+    pub(crate) deadline: Option<std::time::Instant>,
+    /// A label and the message its click sends (the sz download's
+    /// "Show in folder").
+    pub(crate) action: Option<(String, Message)>,
+}
+
 pub struct Oryxis {
     // Vault
     pub(crate) vaults: crate::vault_slots::VaultSlots,
@@ -1219,17 +1232,14 @@ pub struct Oryxis {
     /// Attempt counters keyed by connection UUID, persists across tab recreations.
     pub(crate) reconnect_counters: std::collections::HashMap<Uuid, u32>,
 
-    /// Transient bottom-of-chat status chip, e.g. the "Copied to
-    /// clipboard" feedback after a Copy button click. `Some(text)` →
-    /// render the chip. Auto-dismissal is deadline-driven: every setter
-    /// (`set_toast` / `show_toast`) stamps `toast_deadline`, and the
-    /// `ToastTick` subscription clears both once it passes. A single
-    /// deadline (not per-call sleep timers) means a newer toast always
-    /// wins and no toast is ever left stranded on screen.
-    pub(crate) toast: Option<String>,
-    /// When the current `toast` should auto-dismiss. Reset on every new
-    /// toast so the latest one always gets its full dwell.
-    pub(crate) toast_deadline: Option<std::time::Instant>,
+    /// Transient bottom-of-window status chip, e.g. the "Copied to
+    /// clipboard" feedback after a Copy button click. `Some` → render
+    /// the chip. Auto-dismissal is deadline-driven: every setter stamps
+    /// [`Toast::deadline`], and the `ToastTick` subscription drops the
+    /// chip once it passes. A single deadline (not per-call sleep
+    /// timers) means a newer toast always wins and no toast is ever left
+    /// stranded on screen.
+    pub(crate) toast: Option<Toast>,
     /// Native OS notifications queued during this `update`, handed to a
     /// blocking task each at its end (`dispatch_global::take_os_notice_tasks`).
     /// Never shown from the UI thread: see `Oryxis::push_os_notice`.

@@ -1524,6 +1524,14 @@ impl Oryxis {
             if let Ok(Some(v)) = vault.get_setting("sftp_ask_download_dir") {
                 ov.prefs.sftp_ask_download_dir = v == "true";
             }
+            // The sz picker used to share the SFTP toggle. Read its own
+            // key when present, and otherwise inherit the SFTP value a
+            // build before the split wrote, so an existing user keeps the
+            // behaviour they chose.
+            ov.prefs.zmodem_ask_download_dir = match vault.get_setting("zmodem_ask_download_dir") {
+                Ok(Some(v)) => v == "true",
+                _ => ov.prefs.sftp_ask_download_dir,
+            };
             if let Ok(Some(v)) = vault.get_setting("sftp_console_layout")
                 && let Some(layout) = crate::state::SftpConsoleLayout::from_code(&v)
             {

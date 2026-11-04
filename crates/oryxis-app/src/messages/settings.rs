@@ -250,6 +250,9 @@ pub enum SettingsMessage {
     /// Settings > Connection: seconds between host-monitor probes.
     SettingMonitorIntervalChanged(String),
     ToggleSftpAskDownloadDir,
+    /// Settings > Terminal: ask for the destination on every `sz`
+    /// (ZMODEM) download, independent of the SFTP toggle.
+    ToggleZmodemAskDownloadDir,
     ToggleSftpUploadTempName,
     /// Settings > SFTP: where an SFTP console opened on a live tab
     /// lands (stacked / beside / zoomed). Carries the picked label,

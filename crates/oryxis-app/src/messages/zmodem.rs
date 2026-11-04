@@ -23,10 +23,14 @@ pub enum ZmodemMessage {
     ZmodemDownloadDirPicked(Option<String>),
     /// Reset the ZMODEM download folder to the OS default.
     ClearZmodemDownloadDir,
-    /// The folder was picked after the download had already completed,
-    /// and its files were just moved there (`zmodem_delivery`): the
-    /// completion toast fired with no location, so this one names it.
+    /// A finished download landed in `dir`, reported once so the app can
+    /// say where and offer to reveal it. Fires for every download that
+    /// ended with its files in place: a direct one, a folder picked
+    /// mid-transfer, and one picked after completion.
     ZmodemDelivered { dir: std::path::PathBuf, files: Vec<String> },
+    /// Reveal a finished download's folder in the OS file manager (the
+    /// completion toast's "Show in folder" action).
+    ZmodemRevealInFolder(std::path::PathBuf),
     /// A finished download could not be moved into the picked folder
     /// and is still at `staying`.
     ZmodemMoveFailed {

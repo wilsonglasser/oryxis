@@ -389,9 +389,6 @@ impl Oryxis {
             .boxed()
     }
 
-    /// Row for the ZMODEM download folder: the resolved path (default or
-    /// configured) plus a Browse button, and a Reset when a custom folder
-    /// is set. Always shown (transfers work regardless of other toggles).
     /// The terminal-theme gallery: every built-in and custom palette as a
     /// card, plus the create / import entries. Lives behind a modal
     /// rather than inline in Settings, where 31 built-ins plus the user's
@@ -601,6 +598,60 @@ impl Oryxis {
         card.boxed()
     }
 
+    /// Row for the download folder: the resolved path (default or
+    /// configured) plus a Browse button, and a Reset when a custom folder
+    /// is set. Always shown (transfers work regardless of other toggles).
+    fn default_download_dir_row(&self) -> Element<'_, Message> {
+        let configured = self.device_prefs.zmodem_download_dir.trim();
+        let shown = if configured.is_empty() {
+            dirs::download_dir()
+                .map(|p| p.display().to_string())
+                .unwrap_or_else(|| "~/.oryxis/downloads".to_string())
+        } else {
+            configured.to_string()
+        };
+        let browse = self.settings_nav_slot_labeled(
+            t("default_download_dir"),
+            crate::keynav::RowAction::activate(Message::Zmodem(ZmodemMessage::PickZmodemDownloadDir)),
+            8.0,
+            crate::widgets::styled_button_opt(
+                crate::i18n::t("browse"),
+                Some(Message::Zmodem(ZmodemMessage::PickZmodemDownloadDir)),
+                crate::theme::OryxisColors::t().accent,
+            ),
+        );
+        let mut row = crate::widgets::dir_row(vec![
+            column![
+                crate::widgets::setting_label(crate::i18n::t("default_download_dir"), 13.0, crate::theme::OryxisColors::t().text_primary),
+                Space::new().height(2),
+                text(shown)
+                    .size(11)
+                    .color(crate::theme::OryxisColors::t().text_muted),
+            ]
+            .width(Length::Fill)
+            .boxed(),
+            Space::new().width(10).boxed(),
+            browse,
+        ]);
+        // Reset-to-default only when a custom folder is set.
+        if !configured.is_empty() {
+            let reset = self.settings_nav_slot(
+                crate::keynav::RowAction::activate(Message::Zmodem(ZmodemMessage::ClearZmodemDownloadDir)),
+                8.0,
+                crate::widgets::styled_button_opt(
+                    crate::i18n::t("reset"),
+                    Some(Message::Zmodem(ZmodemMessage::ClearZmodemDownloadDir)),
+                    crate::theme::OryxisColors::t().text_muted,
+                ),
+            );
+            row = row.push(Space::new().width(8).boxed()).push(reset);
+        }
+        container(row.align_y(iced::Alignment::Center))
+            .padding(Padding { top: 8.0, ..Padding::ZERO })
+            .width(Length::Fill)
+            .boxed()
+    }
+
     pub(crate) fn view_settings_terminal(&self) -> Element<'_, Message> {
         // Keyboard rows are recorded in visual order: the sections below
         // are deliberately CONSTRUCTED in the same order they render
@@ -808,11 +859,34 @@ impl Oryxis {
         // it is protocol-specific. The SETTING key stays
         // `zmodem_download_dir`: renaming it would silently drop the
         // folder anyone had already configured.
+        //
+        // ZMODEM's own knobs live here rather than under Settings > SFTP:
+        // `sz` runs in a terminal, so what it does about a destination is
+        // a terminal question, and the two protocols ask separately.
+        let zmodem_block = column![
+            text(t("setting_zmodem_ask_download_dir"))
+                .size(13)
+                .color(OryxisColors::t().text_primary),
+            Space::new().height(4),
+            text(t("setting_zmodem_ask_download_dir_desc"))
+                .size(11)
+                .color(OryxisColors::t().text_muted),
+            Space::new().height(8),
+            self.nav_toggle_row(
+                t("setting_zmodem_ask_download_dir_toggle"),
+                self.vaults.cur().prefs.zmodem_ask_download_dir,
+                Message::Settings(SettingsMessage::ToggleZmodemAskDownloadDir),
+            ),
+            Space::new().height(14),
+            self.default_download_dir_row(),
+        ];
         let behavior_section = panel_section(
             toggles_col
                 .push(word_delimiters_block.boxed())
                 .push(Space::new().height(16).boxed())
-                .push(scrollback_block.boxed()),
+                .push(scrollback_block.boxed())
+                .push(Space::new().height(16).boxed())
+                .push(zmodem_block.boxed()),
         );
 
         // Settings > Terminal used to have one "Appearance" card holding

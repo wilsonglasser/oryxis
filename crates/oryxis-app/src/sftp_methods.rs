@@ -123,7 +123,7 @@ impl Oryxis {
     }
 
     /// Where a download lands when nothing else names a destination:
-    /// the Settings > SFTP "Default download folder" row, resolved
+    /// the Settings > Terminal "Default download folder" row, resolved
     /// through [`crate::state::resolve_download_dir`]. Serves the ZMODEM
     /// landing dir and the sidebar browser's save dialog alike, which is
     /// what that setting promises.

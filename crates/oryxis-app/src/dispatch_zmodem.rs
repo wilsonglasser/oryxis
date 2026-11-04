@@ -138,12 +138,12 @@ impl Oryxis {
             .and_then(|p| p.saved_conn_id())
             .map(|id| format!("host:{id}"))
             .unwrap_or_else(|| format!("pane:{pane_id}"));
-        // "Ask where to save downloads" (Settings > SFTP) governs every
-        // download the app performs, and an `sz` is one: the toggle sits
-        // beside the default-folder row that ZMODEM reads, so a user who
-        // turned it on expects the terminal to stop and ask too (issue
-        // #230). Snapshotted here because the stream outlives `self`.
-        let ask_dest = self.vaults.cur().prefs.sftp_ask_download_dir;
+        // "Ask where to save ZMODEM downloads" (Settings > Terminal)
+        // governs the terminal half only: an `sz` in a terminal has no
+        // destination pane to point at, unlike a dual-pane SFTP download,
+        // so it keeps its own toggle (issue #230, split out on request).
+        // Snapshotted here because the stream outlives `self`.
+        let ask_dest = self.vaults.cur().prefs.zmodem_ask_download_dir;
         let cancelled = abort.clone();
         let io = TransferIo {
             wire_in,
@@ -463,15 +463,29 @@ impl Oryxis {
                 Progress::FileDone { .. } => {}
                 Progress::Completed { trailing } => {
                     replay = trailing;
+                    // Which way this ran, read before the state goes away.
+                    let download = pane
+                        .zmodem
+                        .as_ref()
+                        .is_some_and(|zm| zm.direction == Direction::Download);
                     if let Some(zm) = pane.zmodem.take() {
                         replay.extend(zm.late);
                     }
                     let title = if declined {
-                    crate::i18n::t("transfer_notify_cancelled")
-                } else {
-                    crate::i18n::t("transfer_notify_done")
-                };
-                    toast = Some(title.to_string());
+                        crate::i18n::t("transfer_notify_cancelled")
+                    } else {
+                        crate::i18n::t("transfer_notify_done")
+                    };
+                    // A finished download says where its files went, in the
+                    // `ZmodemDelivered` that follows this event, so this
+                    // bare "done" chip would only be a flash. A cancel
+                    // still says so (nothing follows it), and so does `rz`,
+                    // whose files go to the peer where no folder is ours to
+                    // name. The OS notice is unaffected: `finished` feeds it
+                    // either way.
+                    if declined || !download {
+                        toast = Some(title.to_string());
+                    }
                     finished = Some((title.to_string(), file_name));
                     divert_closed = true;
                 }
@@ -565,9 +579,10 @@ impl Oryxis {
                 Task::none()
             }
             ZmodemMessage::ZmodemDelivered { dir, files } => {
-                // The completion toast already said "done" with no
-                // location, because none was known; this is the moment
-                // the user learns where the files went.
+                // The completion toast said "done" without naming a
+                // folder (it did not know one at that moment); this is
+                // the moment the user learns where the files went, and
+                // the chip offers to open that folder.
                 let text = match files.as_slice() {
                     [one] => crate::i18n::t("zmodem_saved_one")
                         .replacen("{name}", one, 1)
@@ -576,7 +591,21 @@ impl Oryxis {
                         .replacen("{n}", &many.len().to_string(), 1)
                         .replacen("{dir}", &dir.display().to_string(), 1),
                 };
-                self.show_toast_secs(text, 6)
+                self.set_toast_action(
+                    text,
+                    6,
+                    crate::i18n::t("toast_show_in_folder").to_string(),
+                    Message::Zmodem(ZmodemMessage::ZmodemRevealInFolder(dir)),
+                );
+                Task::none()
+            }
+            ZmodemMessage::ZmodemRevealInFolder(dir) => {
+                // Acting on the chip closes it, like any other click.
+                self.toast = None;
+                if let Err(e) = crate::util::reveal_in_file_manager(&dir, true) {
+                    tracing::warn!("reveal {} failed: {e}", dir.display());
+                }
+                Task::none()
             }
             ZmodemMessage::ZmodemMoveFailed { name, dir, staying, err } => {
                 let text = crate::i18n::t("zmodem_move_failed")
