@@ -164,9 +164,12 @@ impl Oryxis {
                     .color(OryxisColors::t().text_muted),
             ]);
             // Download destination (issue #114): the panes' own directory
-            // is the default, this makes every download stop to ask. The
-            // row menu's "Download to..." asks regardless, so the setting
-            // is only about the plain action.
+            // is the default, this makes every SFTP download stop to ask.
+            // The row menu's "Download to..." asks regardless, so this
+            // setting is only about the plain action. `sz` has its own
+            // switch on Settings > Terminal, next to the download folder:
+            // an `sz` in a terminal has no destination pane to point at,
+            // so the two are asked separately.
             let download_section = panel_section(column![
                 text(t("setting_sftp_ask_download_dir"))
                     .size(13)
@@ -195,12 +198,6 @@ impl Oryxis {
                     self.vaults.cur().prefs.sftp_upload_temp_name,
                     Message::Settings(SettingsMessage::ToggleSftpUploadTempName),
                 ),
-                Space::new().height(14),
-                // Moved here from Settings > Terminal (issue #143): a
-                // download setting is looked for next to the rest of
-                // the download behavior, and it serves every download
-                // path (SFTP, ZMODEM, the sidebar browser) alike.
-                self.default_download_dir_row(),
             ]);
             // Where an SFTP console opened on a live session lands. Its
             // own card: it is about the terminal side of SFTP, not
@@ -285,56 +282,5 @@ impl Oryxis {
         .on_scroll(|s| Message::Settings(SettingsMessage::SectionScrolled(s.viewport.relative_offset().y)))
         .height(Length::Fill)
         .boxed()
-    }
-
-    pub(super) fn default_download_dir_row(&self) -> Element<'_, Message> {
-        let configured = self.device_prefs.zmodem_download_dir.trim();
-        let shown = if configured.is_empty() {
-            dirs::download_dir()
-                .map(|p| p.display().to_string())
-                .unwrap_or_else(|| "~/.oryxis/downloads".to_string())
-        } else {
-            configured.to_string()
-        };
-        let browse = self.settings_nav_slot_labeled(
-            t("default_download_dir"),
-            crate::keynav::RowAction::activate(Message::Zmodem(ZmodemMessage::PickZmodemDownloadDir)),
-            8.0,
-            crate::widgets::styled_button_opt(
-                crate::i18n::t("browse"),
-                Some(Message::Zmodem(ZmodemMessage::PickZmodemDownloadDir)),
-                crate::theme::OryxisColors::t().accent,
-            ),
-        );
-        let mut row = crate::widgets::dir_row(vec![
-            column![
-                crate::widgets::setting_label(crate::i18n::t("default_download_dir"), 13.0, crate::theme::OryxisColors::t().text_primary),
-                Space::new().height(2),
-                text(shown)
-                    .size(11)
-                    .color(crate::theme::OryxisColors::t().text_muted),
-            ]
-            .width(Length::Fill)
-            .boxed(),
-            Space::new().width(10).boxed(),
-            browse,
-        ]);
-        // Reset-to-default only when a custom folder is set.
-        if !configured.is_empty() {
-            let reset = self.settings_nav_slot(
-                crate::keynav::RowAction::activate(Message::Zmodem(ZmodemMessage::ClearZmodemDownloadDir)),
-                8.0,
-                crate::widgets::styled_button_opt(
-                    crate::i18n::t("reset"),
-                    Some(Message::Zmodem(ZmodemMessage::ClearZmodemDownloadDir)),
-                    crate::theme::OryxisColors::t().text_muted,
-                ),
-            );
-            row = row.push(Space::new().width(8).boxed()).push(reset);
-        }
-        container(row.align_y(iced::Alignment::Center))
-            .padding(Padding { top: 8.0, ..Padding::ZERO })
-            .width(Length::Fill)
-            .boxed()
     }
 }

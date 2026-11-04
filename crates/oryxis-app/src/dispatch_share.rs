@@ -10,7 +10,7 @@ use iced::futures::SinkExt;
 use iced::Task;
 use oryxis_ssh::SshEngine;
 
-use crate::app::{SshMessage, ShareMessage, Message, Oryxis};
+use crate::app::{SshMessage, ShareMessage, Message, Oryxis, Toast};
 
 /// Result of an SFTP backup transfer once the session is up: either the
 /// byte count written (export) or the validated blob read back (import).
@@ -1030,22 +1030,40 @@ impl Oryxis {
     /// real `Task` of its own and so cannot go through [`show_toast_secs`]
     /// (whose empty `Task` would swallow it).
     pub(crate) fn set_toast_secs(&mut self, msg: String, secs: u64) {
-        self.set_toast_millis(msg, secs * 1000);
+        self.set_toast_millis(msg, secs * 1000, None);
+    }
+
+    /// Show a toast that carries one clickable action, rendered as a
+    /// link inside the chip (the sz download's "Show in folder").
+    pub(crate) fn set_toast_action(
+        &mut self,
+        msg: String,
+        secs: u64,
+        label: String,
+        action: Message,
+    ) {
+        self.set_toast_millis(msg, secs * 1000, Some((label, action)));
     }
 
     /// Set the toast chip and stamp its auto-dismiss deadline (default
-    /// dwell). This is the single entry point every toast should go
-    /// through: the `ToastTick` subscription clears the chip once the
-    /// deadline passes, so no toast is ever stranded and the newest one
-    /// always wins its full dwell.
+    /// dwell). Every toast goes through [`set_toast_millis`]: the
+    /// `ToastTick` subscription clears the chip once the deadline passes,
+    /// so no toast is ever stranded and the newest one always wins its
+    /// full dwell.
     pub(crate) fn set_toast(&mut self, msg: String) {
-        self.set_toast_millis(msg, 2600);
+        self.set_toast_millis(msg, 2600, None);
     }
 
-    fn set_toast_millis(&mut self, msg: String, millis: u64) {
-        self.toast = Some(msg);
-        self.toast_deadline =
-            std::time::Instant::now().checked_add(std::time::Duration::from_millis(millis));
+    /// Replace the chip wholesale: the newest text owns the deadline and
+    /// the action too, so nothing from a previous toast survives into
+    /// this one.
+    fn set_toast_millis(&mut self, msg: String, millis: u64, action: Option<(String, Message)>) {
+        self.toast = Some(Toast {
+            text: msg,
+            deadline: std::time::Instant::now()
+                .checked_add(std::time::Duration::from_millis(millis)),
+            action,
+        });
     }
 
     /// A folder id together with every folder nested beneath it. Drives

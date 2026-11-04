@@ -221,18 +221,18 @@ impl Oryxis {
                 // The focus-return handler re-stamps the deadline.
                 if self.cur_focused()
                     && self
-                        .toast_deadline
+                        .toast
+                        .as_ref()
+                        .and_then(|toast| toast.deadline)
                         .is_some_and(|d| std::time::Instant::now() >= d)
                 {
                     self.toast = None;
-                    self.toast_deadline = None;
                 }
             }
 
             Message::ToastDismiss => {
                 // Explicit click on the chip: clear immediately.
                 self.toast = None;
-                self.toast_deadline = None;
             }
 
             Message::ToastShow(text) => {

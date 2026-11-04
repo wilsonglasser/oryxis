@@ -173,12 +173,10 @@ pub enum Message {
     /// `dispatch_global::write_clipboard_text`), so the "Copied" toast can
     /// only be raised once the write actually landed.
     ClipboardWritten(bool),
-    /// Dismiss the transient toast chip (`Oryxis.toast`). Fired by a
-    /// `Task::perform` sleep scheduled when a toast is shown.
-    /// Deadline-guarded clear: clears the toast only if `toast_deadline`
-    /// has passed. Fired by the `ToastTick`-style subscription and by any
-    /// legacy scheduled sleep-timer, so a superseded timer can never wipe
-    /// a newer toast.
+    /// Dismiss the transient toast chip (`Oryxis.toast`). Deadline-guarded
+    /// clear: drops the chip only if its deadline has passed. Fired by the
+    /// `ToastTick`-style subscription and by any legacy scheduled
+    /// sleep-timer, so a superseded timer can never wipe a newer toast.
     ToastClear,
     /// Immediate dismissal (clicking the chip), regardless of deadline.
     ToastDismiss,

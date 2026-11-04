@@ -570,7 +570,6 @@ impl Oryxis {
                 update_check_status: None,
                 reconnect_counters: std::collections::HashMap::new(),
                 toast: None,
-                toast_deadline: None,
                 os_notices: Vec::new(),
                 loaded_cjk_fonts: std::collections::HashSet::new(),
                 loaded_pack_fonts: std::collections::HashSet::new(),

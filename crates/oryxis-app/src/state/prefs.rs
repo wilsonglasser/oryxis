@@ -514,12 +514,19 @@ pub(crate) struct AppPrefs {
     /// channel on the same SSH connection so they don't fight for the
     /// shared client mutex.
     pub(crate) sftp_concurrency: String,
-    /// Ask for the destination folder on every download instead of using
-    /// the local pane's current directory. Off by default: in the
+    /// Ask for the destination folder on every SFTP download instead of
+    /// using the local pane's current directory. Off by default: in the
     /// dual-pane surface the destination is already on screen, so asking
     /// every time would be noise for most users. The row menu's "Download
-    /// to..." asks regardless.
+    /// to..." asks regardless. `sz` has its own toggle below.
     pub(crate) sftp_ask_download_dir: bool,
+    /// Ask for the destination folder on every `sz` (ZMODEM) download,
+    /// instead of receiving straight into the default download folder.
+    /// Deliberately separate from `sftp_ask_download_dir`: a dual-pane
+    /// SFTP download already shows its destination, while an `sz` in a
+    /// terminal does not, and wanting the picker on one does not imply
+    /// wanting it on the other.
+    pub(crate) zmodem_ask_download_dir: bool,
     /// Upload to a scratch name and rename into place on success, so the
     /// real name only ever appears finished (WinSCP's "transfer to
     /// temporary filename"). Off by default because the remote side has
@@ -722,6 +729,7 @@ impl Default for AppPrefs {
             pane_end_action: crate::util::PaneEndAction::default(),
             sftp_concurrency: "2".into(),
             sftp_ask_download_dir: false,
+            zmodem_ask_download_dir: false,
             sftp_upload_temp_name: false,
             sftp_console_layout: crate::state::SftpConsoleLayout::default(),
             sftp_dir_double_click: crate::state::SftpDirDoubleClick::default(),

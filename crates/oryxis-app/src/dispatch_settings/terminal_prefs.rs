@@ -279,6 +279,13 @@ impl Oryxis {
                     if self.vaults.cur().prefs.sftp_ask_download_dir { "true" } else { "false" },
                 );
             }
+            SettingsMessage::ToggleZmodemAskDownloadDir => {
+                self.vaults.cur_mut().prefs.zmodem_ask_download_dir = !self.vaults.cur_mut().prefs.zmodem_ask_download_dir;
+                self.persist_setting(
+                    "zmodem_ask_download_dir",
+                    if self.vaults.cur().prefs.zmodem_ask_download_dir { "true" } else { "false" },
+                );
+            }
             SettingsMessage::TerminalRightClickChanged(name) => {
                 use crate::util::RightClickMode;
                 if let Some(mode) = RightClickMode::ALL

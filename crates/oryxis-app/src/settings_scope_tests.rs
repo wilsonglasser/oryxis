@@ -66,7 +66,7 @@ const VAULT_KEYS: &[&str] = &[
     "terminal_link_tunnel", "terminal_notification", "terminal_opacity",
     "terminal_password_autofill", "terminal_right_click", "terminal_sidebar_side",
     "terminal_text_thickness", "terminal_theme", "terminal_theme_override",
-    "tmux_manager_enabled", "word_delimiters",
+    "tmux_manager_enabled", "word_delimiters", "zmodem_ask_download_dir",
 ];
 
 /// Every settings key (or `format!` prefix) named in the non-test source

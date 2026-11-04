@@ -281,6 +281,7 @@ impl Oryxis {
             | SettingsMessage::ToggleMiddleClickPaste
             | SettingsMessage::ToggleWheelZoom
             | SettingsMessage::ToggleSftpAskDownloadDir
+            | SettingsMessage::ToggleZmodemAskDownloadDir
             | SettingsMessage::ToggleSftpUploadTempName
             | SettingsMessage::SftpConsoleLayoutChanged(..)
             | SettingsMessage::SftpDirDoubleClickChanged(..)
